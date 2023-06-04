@@ -8,24 +8,25 @@
 package memory
 
 import (
-	"github.com/tryfix/kstream/backend"
+	"github.com/gmbyapa/kstream/backend"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
 	"sync"
 	"time"
 )
 
-type memoryRecord struct {
-	key       []byte
-	value     []byte
+type ByteRecord struct {
+	Key       []byte
+	Value     []byte
 	createdAt time.Time
 	expiry    time.Duration
 }
 
 type config struct {
+	RecordExpiryEnabled          bool
+	RecordExpiry                 time.Duration
 	ExpiredRecordCleanupInterval time.Duration
 	MetricsReporter              metrics.Reporter
-	Logger                       log.Logger
 }
 
 func NewConfig() *config {
@@ -37,11 +38,7 @@ func NewConfig() *config {
 
 func (c *config) parse() {
 	if c.ExpiredRecordCleanupInterval == time.Duration(0) {
-		c.ExpiredRecordCleanupInterval = time.Second
-	}
-
-	if c.Logger == nil {
-		c.Logger = log.NewNoopLogger()
+		c.ExpiredRecordCleanupInterval = 10 * time.Second
 	}
 
 	if c.MetricsReporter == nil {
@@ -50,7 +47,10 @@ func (c *config) parse() {
 }
 
 type memory struct {
+	name                         string
 	expiredRecordCleanupInterval time.Duration
+	globalRecordExpiry           time.Duration
+	recordExpiryEnabled          bool
 	records                      *sync.Map
 	logger                       log.Logger
 	metrics                      struct {
@@ -61,17 +61,26 @@ type memory struct {
 	}
 }
 
+func (m *memory) Flush() error {
+	panic("not yet supported")
+}
+
+func (m *memory) SetAll(kayVals []backend.KeyVal, expiry time.Duration) error {
+	panic("not yet supported")
+}
+
 func Builder(config *config) backend.Builder {
 	return func(name string) (backend backend.Backend, err error) {
-		return NewMemoryBackend(config), nil
+		return NewMemoryBackend(name, config), nil
 	}
 }
 
-func NewMemoryBackend(config *config) backend.Backend {
-
+func NewMemoryBackend(name string, config *config) backend.Backend {
 	m := &memory{
+		name:                         name,
+		globalRecordExpiry:           config.RecordExpiry,
+		recordExpiryEnabled:          config.RecordExpiryEnabled,
 		expiredRecordCleanupInterval: config.ExpiredRecordCleanupInterval,
-		logger:                       config.Logger,
 		records:                      new(sync.Map),
 	}
 
@@ -81,7 +90,10 @@ func NewMemoryBackend(config *config) backend.Backend {
 	m.metrics.storageSize = config.MetricsReporter.Gauge(metrics.MetricConf{Path: `backend_storage_size`, Labels: labels})
 	m.metrics.deleteLatency = config.MetricsReporter.Observer(metrics.MetricConf{Path: `backend_delete_latency_microseconds`, Labels: labels})
 
-	go m.runCleaner()
+	if m.recordExpiryEnabled {
+		go m.runCleaner()
+	}
+
 	return m
 }
 
@@ -90,8 +102,10 @@ func (m *memory) runCleaner() {
 	for range ticker.C {
 		records := m.snapshot()
 		for _, record := range records {
-			if record.expiry > 0 && time.Since(record.createdAt).Nanoseconds() > record.expiry.Nanoseconds() {
-				if err := m.Delete(record.key); err != nil {
+			age := time.Since(record.createdAt).Nanoseconds()
+			if (record.expiry > 0 && age > record.expiry.Nanoseconds()) ||
+				m.globalRecordExpiry > 0 && age > m.globalRecordExpiry.Nanoseconds() {
+				if err := m.Delete(record.Key); err != nil {
 					m.logger.Error(err)
 				}
 			}
@@ -99,11 +113,11 @@ func (m *memory) runCleaner() {
 	}
 }
 
-func (m *memory) snapshot() []memoryRecord {
-	records := make([]memoryRecord, 0)
+func (m *memory) snapshot() []ByteRecord {
+	records := make([]ByteRecord, 0)
 
 	m.records.Range(func(key, value interface{}) bool {
-		records = append(records, value.(memoryRecord))
+		records = append(records, value.(ByteRecord))
 		return true
 	})
 
@@ -111,7 +125,7 @@ func (m *memory) snapshot() []memoryRecord {
 }
 
 func (m *memory) Name() string {
-	return `memory`
+	return m.name
 }
 
 func (m *memory) String() string {
@@ -123,14 +137,13 @@ func (m *memory) Persistent() bool {
 }
 
 func (m *memory) Set(key []byte, value []byte, expiry time.Duration) error {
-
 	defer func(begin time.Time) {
 		m.metrics.updateLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: m.Name(), `type`: `memory`})
 	}(time.Now())
 
-	record := memoryRecord{
-		key:       key,
-		value:     value,
+	record := ByteRecord{
+		Key:       key,
+		Value:     value,
 		expiry:    expiry,
 		createdAt: time.Now(),
 	}
@@ -141,7 +154,6 @@ func (m *memory) Set(key []byte, value []byte, expiry time.Duration) error {
 }
 
 func (m *memory) Get(key []byte) ([]byte, error) {
-
 	defer func(begin time.Time) {
 		m.metrics.readLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: m.Name(), `type`: `memory`})
 	}(time.Now())
@@ -151,23 +163,18 @@ func (m *memory) Get(key []byte) ([]byte, error) {
 		return nil, nil
 	}
 
-	return record.(memoryRecord).value, nil
+	return record.(ByteRecord).Value, nil
 }
 
-func (m *memory) RangeIterator(fromKy []byte, toKey []byte) backend.Iterator {
-	panic("implement me")
+func (m *memory) PrefixedIterator(keyPrefix []byte) backend.Iterator {
+	panic("memory backend does not support PrefixedIterator")
 }
 
 func (m *memory) Iterator() backend.Iterator {
-	records := m.snapshot()
-	return &Iterator{
-		records: records,
-		valid:   len(records) > 0,
-	}
+	return NewMemoryIterator(m.snapshot())
 }
 
 func (m *memory) Delete(key []byte) error {
-
 	defer func(begin time.Time) {
 		m.metrics.deleteLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), map[string]string{`name`: m.Name(), `type`: `memory`})
 	}(time.Now())
@@ -181,67 +188,7 @@ func (m *memory) Destroy() error { return nil }
 
 func (m *memory) SetExpiry(time time.Duration) {}
 
-func (m *memory) reportMetricsSize() {}
-
 func (m *memory) Close() error {
 	m.records = nil
-	return nil
-}
-
-type Iterator struct {
-	records    []memoryRecord
-	currentKey int
-	valid      bool
-}
-
-func (i *Iterator) SeekToFirst() {
-	i.currentKey = 0
-}
-
-func (i *Iterator) SeekToLast() {
-	i.currentKey = len(i.records) - 1
-}
-
-func (i *Iterator) Seek(key []byte) {
-	for idx, r := range i.records {
-		if string(r.key) == string(key) {
-			i.currentKey = idx
-		}
-	}
-}
-
-func (i *Iterator) Next() {
-	if i.currentKey == len(i.records)-1 {
-		i.valid = false
-		return
-	}
-	i.currentKey += 1
-}
-
-func (i *Iterator) Prev() {
-	if i.currentKey < 0 {
-		i.valid = false
-		return
-	}
-	i.currentKey += 1
-}
-
-func (i *Iterator) Close() {
-	i.records = nil
-}
-
-func (i *Iterator) Key() []byte {
-	return i.records[i.currentKey].key
-}
-
-func (i *Iterator) Value() []byte {
-	return i.records[i.currentKey].value
-}
-
-func (i *Iterator) Valid() bool {
-	return i.valid
-}
-
-func (i *Iterator) Error() error {
 	return nil
 }

@@ -9,23 +9,45 @@ package memory
 
 import (
 	"fmt"
+	"github.com/gmbyapa/kstream/backend"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
 	"math/rand"
+	"os"
 	"testing"
 )
 
+var benchReadOnlyBackend backend.Backend
+var benchReadOnlyRecCount = 10000000
+
+func TestMain(m *testing.M) {
+	// call flag.Parse() here if TestMain uses flags
+	seedBenchReadOnly()
+	code := m.Run()
+	benchReadOnlyBackend.Close()
+	os.Exit(code)
+}
+
+func seedBenchReadOnly() {
+	conf := NewConfig()
+	benchReadOnlyBackend = NewMemoryBackend(`test`, conf)
+	for i := 1; i <= benchReadOnlyRecCount; i++ {
+		if err := benchReadOnlyBackend.Set([]byte(fmt.Sprint(i)), []byte(`100`), 0); err != nil {
+			panic(err)
+		}
+	}
+}
+
 func BenchmarkMemory_Set(b *testing.B) {
 	conf := NewConfig()
-	conf.Logger = log.NewNoopLogger()
 	conf.MetricsReporter = metrics.NoopReporter()
-	backend := NewMemoryBackend(conf)
+	bkend := NewMemoryBackend(`test`, conf)
 
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if err := backend.Set([]byte(`100`), []byte(`100`), 0); err != nil {
+			if err := bkend.Set([]byte(`100`), []byte(`100`), 0); err != nil {
 				log.Fatal(err)
 			}
 		}
@@ -33,25 +55,13 @@ func BenchmarkMemory_Set(b *testing.B) {
 }
 
 func BenchmarkMemory_Get(b *testing.B) {
-	conf := NewConfig()
-	conf.Logger = log.NewNoopLogger()
-	conf.MetricsReporter = metrics.NoopReporter()
-	backend := NewMemoryBackend(conf)
-	numOfRecs := 1000000
-	for i := 1; i <= numOfRecs; i++ {
-		if err := backend.Set([]byte(fmt.Sprint(i)), []byte(`100`), 0); err != nil {
-			log.Fatal(err)
-		}
-	}
-
-	b.ResetTimer()
 	b.ReportAllocs()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			k := fmt.Sprint(rand.Intn(numOfRecs-1) + 1)
+			k := fmt.Sprint(rand.Intn(benchReadOnlyRecCount-1) + 1)
 
-			if _, err := backend.Get([]byte(k)); err != nil {
+			if _, err := benchReadOnlyBackend.Get([]byte(k)); err != nil {
 				b.Error(err)
 			}
 		}
@@ -60,57 +70,37 @@ func BenchmarkMemory_Get(b *testing.B) {
 
 func BenchmarkMemory_GetSet(b *testing.B) {
 	conf := NewConfig()
-	conf.Logger = log.NewNoopLogger()
 	conf.MetricsReporter = metrics.NoopReporter()
-	backend := NewMemoryBackend(conf)
+	bkend := NewMemoryBackend(`test`, conf)
 
 	for i := 1; i <= 99999; i++ {
-		if err := backend.Set([]byte(fmt.Sprint(rand.Intn(1000)+1)), []byte(`100`), 0); err != nil {
+		if err := bkend.Set([]byte(fmt.Sprint(rand.Intn(1000)+1)), []byte(`100`), 0); err != nil {
 			log.Fatal(err)
 		}
 	}
 	b.ResetTimer()
-	go func() {
-		for {
-			if err := backend.Set([]byte(fmt.Sprint(rand.Intn(1000)+1)), []byte(`100`), 0); err != nil {
-				b.Fatal(err)
-			}
-		}
-	}()
-
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if _, err := backend.Get([]byte(fmt.Sprint(rand.Intn(1000) + 1))); err != nil {
-				b.Fatal(err)
+			if _, err := bkend.Get([]byte(fmt.Sprint(rand.Intn(1000) + 1))); err != nil {
+				b.Error(err)
 			}
 		}
 	})
 }
 
 func BenchmarkMemory_Iterator(b *testing.B) {
-	conf := NewConfig()
-	conf.Logger = log.NewNoopLogger()
-	conf.MetricsReporter = metrics.NoopReporter()
-	backend := NewMemoryBackend(conf)
-
-	for i := 1; i <= 999999; i++ {
-		if err := backend.Set([]byte(fmt.Sprint(rand.Intn(999999)+1)), []byte(`100`), 0); err != nil {
-			log.Fatal(err)
-		}
-	}
-	b.ResetTimer()
-
+	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			i := backend.Iterator()
-			for i.Valid() {
+			i := benchReadOnlyBackend.Iterator()
+			var c int
+			for i.SeekToFirst(); i.Valid(); i.Next() {
+				c++
+			}
 
-				if i.Error() != nil {
-					i.Next()
-					continue
-				}
-
-				i.Next()
+			if c != benchReadOnlyRecCount {
+				b.Error(`count`, c)
+				b.Fail()
 			}
 		}
 	})
