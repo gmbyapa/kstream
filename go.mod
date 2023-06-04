@@ -1,4 +1,4 @@
-module github.com/gmbyapa/kstream
+module github.com/gmbyapa/kstream/v2
 
 go 1.18
 
