@@ -3,7 +3,7 @@ package topology
 import (
 	"context"
 	"fmt"
-	"github.com/gmbyapa/kstream/pkg/errors"
+	"github.com/gmbyapa/kstream/v2/pkg/errors"
 )
 
 type KeyValPair struct {

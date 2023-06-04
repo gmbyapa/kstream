@@ -3,7 +3,7 @@ package processors
 import (
 	"context"
 
-	"github.com/gmbyapa/kstream/streams/topology"
+	"github.com/gmbyapa/kstream/v2/streams/topology"
 )
 
 type FlatMapValuesFunc func(ctx context.Context, key, value interface{}) ([]interface{}, error)

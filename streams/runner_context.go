@@ -2,7 +2,7 @@ package streams
 
 import (
 	"context"
-	"github.com/gmbyapa/kstream/kafka"
+	"github.com/gmbyapa/kstream/v2/kafka"
 )
 
 type RunnerContext interface {

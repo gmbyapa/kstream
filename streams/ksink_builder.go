@@ -2,9 +2,9 @@ package streams
 
 import (
 	"context"
-	"github.com/gmbyapa/kstream/kafka"
-	"github.com/gmbyapa/kstream/streams/encoding"
-	"github.com/gmbyapa/kstream/streams/topology"
+	"github.com/gmbyapa/kstream/v2/kafka"
+	"github.com/gmbyapa/kstream/v2/streams/encoding"
+	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/log"
 )
 

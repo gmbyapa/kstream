@@ -1,7 +1,7 @@
 package topology
 
 import (
-	"github.com/gmbyapa/kstream/streams/encoding"
+	"github.com/gmbyapa/kstream/v2/streams/encoding"
 )
 
 type SinkEncoder struct {

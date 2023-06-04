@@ -3,7 +3,7 @@ package mocks
 import (
 	"context"
 	librd "github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/gmbyapa/kstream/kafka"
+	"github.com/gmbyapa/kstream/v2/kafka"
 	"hash"
 	"hash/fnv"
 )

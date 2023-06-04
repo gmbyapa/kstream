@@ -2,7 +2,7 @@ package stores
 
 import (
 	"context"
-	"github.com/gmbyapa/kstream/pkg/errors"
+	"github.com/gmbyapa/kstream/v2/pkg/errors"
 )
 
 func UpdateIndexes(ctx context.Context, store IndexedStore, key, val interface{}) error {

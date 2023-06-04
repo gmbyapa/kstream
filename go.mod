@@ -1,6 +1,6 @@
 module github.com/gmbyapa/kstream/v2
 
-go 1.18
+go 1.17
 
 require (
 	github.com/Shopify/sarama v1.37.2
@@ -11,6 +11,7 @@ require (
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/handlers v1.4.2
 	github.com/gorilla/mux v1.8.0
+	github.com/prometheus/client_golang v1.13.0
 	github.com/tryfix/log v1.2.0
 	github.com/tryfix/metrics v1.0.1
 )
@@ -48,7 +49,6 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.17 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/prometheus/client_golang v1.13.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.37.0 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect

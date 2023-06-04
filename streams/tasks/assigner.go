@@ -3,8 +3,8 @@ package tasks
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/gmbyapa/kstream/kafka"
-	"github.com/gmbyapa/kstream/streams/topology"
+	"github.com/gmbyapa/kstream/v2/kafka"
+	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"sort"
 	"strings"
 )

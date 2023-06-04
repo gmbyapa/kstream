@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/gmbyapa/kstream/pkg/errors"
+	"github.com/gmbyapa/kstream/v2/pkg/errors"
 )
 
 type FloatEncoder struct{}
