@@ -147,6 +147,10 @@ func (r *registry) NewIndexedStore(name string, keyEncoder, valEncoder encoding.
 		r.logger.Fatal(err)
 	}
 
+	if s == nil {
+		panic(fmt.Sprintf(`StoreBuilder returns nil, store %s`, name))
+	}
+
 	r.stores[name] = s
 
 	for _, idx := range s.Indexes() {
