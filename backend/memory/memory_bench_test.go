@@ -9,7 +9,7 @@ package memory
 
 import (
 	"fmt"
-	"github.com/gmbyapa/kstream/backend"
+	"github.com/gmbyapa/kstream/v2/backend"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
 	"math/rand"

@@ -2,11 +2,11 @@ package state_stores
 
 import (
 	"context"
-	"github.com/gmbyapa/kstream/streams/encoding"
+	"github.com/gmbyapa/kstream/v2/streams/encoding"
 	"time"
 
-	"github.com/gmbyapa/kstream/streams/stores"
-	"github.com/gmbyapa/kstream/streams/topology"
+	"github.com/gmbyapa/kstream/v2/streams/stores"
+	"github.com/gmbyapa/kstream/v2/streams/topology"
 )
 
 type StateStore struct {

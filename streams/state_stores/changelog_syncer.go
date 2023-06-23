@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gmbyapa/kstream/kafka"
-	"github.com/gmbyapa/kstream/pkg/errors"
-	"github.com/gmbyapa/kstream/streams/stores"
+	"github.com/gmbyapa/kstream/v2/kafka"
+	"github.com/gmbyapa/kstream/v2/pkg/errors"
+	"github.com/gmbyapa/kstream/v2/streams/stores"
 	logger "github.com/tryfix/log"
 )
 

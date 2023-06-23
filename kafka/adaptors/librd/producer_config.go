@@ -2,8 +2,8 @@ package librd
 
 import (
 	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/gmbyapa/kstream/kafka"
-	"github.com/gmbyapa/kstream/pkg/errors"
+	"github.com/gmbyapa/kstream/v2/kafka"
+	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/tryfix/log"
 	"strings"
 )

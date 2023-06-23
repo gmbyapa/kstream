@@ -2,7 +2,7 @@ package mocks
 
 import (
 	"context"
-	"github.com/gmbyapa/kstream/kafka"
+	"github.com/gmbyapa/kstream/v2/kafka"
 	"hash"
 	"hash/fnv"
 )

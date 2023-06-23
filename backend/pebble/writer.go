@@ -2,7 +2,7 @@ package pebble
 
 import (
 	pebbleDB "github.com/cockroachdb/pebble"
-	"github.com/gmbyapa/kstream/backend"
+	"github.com/gmbyapa/kstream/v2/backend"
 	"github.com/tryfix/metrics"
 	"time"
 )

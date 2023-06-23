@@ -2,7 +2,7 @@ package sarama
 
 import (
 	"github.com/Shopify/sarama"
-	"github.com/gmbyapa/kstream/kafka"
+	"github.com/gmbyapa/kstream/v2/kafka"
 	"github.com/tryfix/log"
 	"testing"
 )

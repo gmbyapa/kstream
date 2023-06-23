@@ -2,10 +2,10 @@ package streams
 
 import (
 	"context"
-	"github.com/gmbyapa/kstream/streams/encoding"
-	"github.com/gmbyapa/kstream/streams/stores"
-	"github.com/gmbyapa/kstream/streams/tasks"
-	"github.com/gmbyapa/kstream/streams/topology"
+	"github.com/gmbyapa/kstream/v2/streams/encoding"
+	"github.com/gmbyapa/kstream/v2/streams/stores"
+	"github.com/gmbyapa/kstream/v2/streams/tasks"
+	"github.com/gmbyapa/kstream/v2/streams/topology"
 )
 
 type QueryableStoreWrapper interface {
