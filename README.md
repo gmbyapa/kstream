@@ -1,9 +1,9 @@
 # KStream - Kafka Streams for Golang
 
-[![Godoc](http://img.shields.io/badge/go-documentation-blue.svg?style=flat-square)](https://pkg.go.dev/github.com/gmbyapa/kstream)
-[![Releases](https://img.shields.io/github/release/gmbyapa/kstream/all.svg?style=flat-square)](https://github.com/gmbyapa/kstream/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/gmbyapa/kstream)](https://goreportcard.com/report/github.com/gmbyapa/kstream)
-[![LICENSE](https://img.shields.io/github/license/gmbyapa/kstream.svg?style=flat-square)](https://github.com/gmbyapa/kstream/blob/master/LICENSE)
+[![Godoc](http://img.shields.io/badge/go-documentation-blue.svg?style=flat-square)](https://pkg.go.dev/github.com/gmbyapa/kstream/v2)
+[![Releases](https://img.shields.io/github/release/gmbyapa/kstream/all.svg?style=flat-square)](https://github.com/gmbyapa/kstream/v2/releases)
+[![Go Report Card](https://goreportcard.com/badge/github.com/gmbyapa/kstream/v2)](https://goreportcard.com/report/github.com/gmbyapa/kstream/v2)
+[![LICENSE](https://img.shields.io/github/license/gmbyapa/kstream.svg?style=flat-square)](https://github.com/gmbyapa/kstream/v2/blob/master/LICENSE)
 
 KStream is a [kafka streams](https://kafka.apache.org/documentation/streams/) implementation written in Golang. It is
 heavily influenced by Kafka-Streams(Java) library and includes features such as Streams, Tables, State Stores,

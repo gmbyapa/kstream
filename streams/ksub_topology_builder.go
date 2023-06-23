@@ -2,8 +2,8 @@ package streams
 
 import (
 	"fmt"
-	"github.com/gmbyapa/kstream/pkg/errors"
-	"github.com/gmbyapa/kstream/streams/topology"
+	"github.com/gmbyapa/kstream/v2/pkg/errors"
+	"github.com/gmbyapa/kstream/v2/streams/topology"
 )
 
 type kSubTopologyBuilder struct {

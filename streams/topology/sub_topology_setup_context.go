@@ -1,7 +1,7 @@
 package topology
 
 import (
-	"github.com/gmbyapa/kstream/kafka"
+	"github.com/gmbyapa/kstream/v2/kafka"
 )
 
 type subTopologySetupContext struct {

@@ -2,11 +2,11 @@ package streams
 
 import (
 	"context"
-	"github.com/gmbyapa/kstream/kafka"
-	"github.com/gmbyapa/kstream/pkg/async"
-	"github.com/gmbyapa/kstream/pkg/errors"
-	"github.com/gmbyapa/kstream/streams/tasks"
-	"github.com/gmbyapa/kstream/streams/topology"
+	"github.com/gmbyapa/kstream/v2/kafka"
+	"github.com/gmbyapa/kstream/v2/pkg/async"
+	"github.com/gmbyapa/kstream/v2/pkg/errors"
+	"github.com/gmbyapa/kstream/v2/streams/tasks"
+	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/log"
 )
 
@@ -29,8 +29,8 @@ type GlobalTableConsumer struct {
 // - topologyBuilder: the topology builder to use for creating GlobalTableTopologies
 //
 // Returns:
-// - error: if there was an error fetching partitions, adding a task to the task manager, or
-//          if the task failed to start.
+//   - error: if there was an error fetching partitions, adding a task to the task manager, or
+//     if the task failed to start.
 func (g *GlobalTableConsumer) Init(topologyBuilder topology.Topology) error {
 	for _, builder := range topologyBuilder.GlobalTableTopologies() {
 		// Get the topic for the first source in the GlobalTableTopology.

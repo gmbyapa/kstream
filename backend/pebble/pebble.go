@@ -10,8 +10,8 @@ package pebble
 import (
 	"fmt"
 	pebbleDB "github.com/cockroachdb/pebble"
-	"github.com/gmbyapa/kstream/backend"
-	"github.com/gmbyapa/kstream/pkg/errors"
+	"github.com/gmbyapa/kstream/v2/backend"
+	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
 	//"sync"

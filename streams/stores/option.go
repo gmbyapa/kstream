@@ -1,8 +1,8 @@
 package stores
 
 import (
-	"github.com/gmbyapa/kstream/backend"
-	"github.com/gmbyapa/kstream/backend/memory"
+	"github.com/gmbyapa/kstream/v2/backend"
+	"github.com/gmbyapa/kstream/v2/backend/memory"
 )
 
 type StoreOptions struct {

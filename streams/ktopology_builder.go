@@ -2,10 +2,10 @@ package streams
 
 import (
 	"fmt"
-	"github.com/gmbyapa/kstream/kafka"
-	"github.com/gmbyapa/kstream/pkg/errors"
-	"github.com/gmbyapa/kstream/streams/stores"
-	"github.com/gmbyapa/kstream/streams/topology"
+	"github.com/gmbyapa/kstream/v2/kafka"
+	"github.com/gmbyapa/kstream/v2/pkg/errors"
+	"github.com/gmbyapa/kstream/v2/streams/stores"
+	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/log"
 )
 

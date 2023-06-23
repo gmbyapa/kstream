@@ -9,8 +9,8 @@ package pebble_test
 
 import (
 	"fmt"
-	"github.com/gmbyapa/kstream/backend"
-	"github.com/gmbyapa/kstream/backend/pebble"
+	"github.com/gmbyapa/kstream/v2/backend"
+	"github.com/gmbyapa/kstream/v2/backend/pebble"
 	"github.com/tryfix/log"
 	"math/rand"
 	"os"
