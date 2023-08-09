@@ -135,6 +135,9 @@ func (p *librdTxProducer) ProduceAsync(ctx context.Context, message kafka.Record
 }
 
 func (p *librdTxProducer) handleTxError(ctx context.Context, err error, reason string, retry func() error) error {
+	p.config.Logger.WarnContext(ctx, fmt.Sprintf(`Retring transaction. Reason: %s, Error %s`, reason, err))
+	p.metrics.produceErrors.Count(1, map[string]string{`error`: fmt.Sprint(err)})
+
 	if err.(librdKafka.Error).IsRetriable() {
 		p.config.Logger.WarnContext(ctx, fmt.Sprintf(`%s due to (%s), retrying...`, reason, err))
 		return retry()
@@ -154,9 +157,15 @@ func (p *librdTxProducer) handleTxError(ctx context.Context, err error, reason s
 		}
 	}
 
-	if err := p.librdProducer.librdProducer().InitTransactions(ctx); err != nil {
+	if err := p.InitTransactions(ctx); err != nil {
 		return p.handleTxError(ctx, err, `transaction init failed`, func() error {
 			return p.InitTransactions(ctx)
+		})
+	}
+
+	if err := p.BeginTransaction(); err != nil {
+		return p.handleTxError(ctx, err, `transaction begin failed`, func() error {
+			return p.BeginTransaction()
 		})
 	}
 

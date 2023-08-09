@@ -104,6 +104,7 @@ MAIN:
 						continue
 					}
 
+					// If not syncing each record has to be updated with its indexes
 					if err := lg.updateStoreWithIndex(idxStor, e); err != nil {
 						lg.logger.Error(fmt.Sprintf(`Cannot update indexed store due to %s`, err))
 					}
@@ -132,13 +133,6 @@ MAIN:
 						syncedCount,
 						time.Since(syncStarted).String()))
 					ticker.Stop()
-
-					// Rebuild indexes
-					if idxStr, ok := lg.store.(stores.IndexedStore); ok {
-						if err := lg.rebuildStoreIndexes(idxStr); err != nil {
-							panic(errors.Wrapf(err, `changelog recovery failed. `).Error())
-						}
-					}
 
 					// Send partition sync completed signal
 					synced <- struct{}{}
@@ -210,41 +204,6 @@ func (lg *changelogSyncer) updateStore(record kafka.Record) error {
 
 	if err := lg.store.Backend().Set(record.Key(), record.Value(), 0); err != nil {
 		return errors.Wrapf(err, `Cannot write message(%s)`, record)
-	}
-
-	return nil
-}
-
-func (lg *changelogSyncer) rebuildStoreIndexes(stor stores.IndexedStore) error {
-	lg.logger.Info(`Rebuilding indexes...`)
-
-	var idxCount int
-	defer func(t time.Time) {
-		lg.logger.Info(fmt.Sprintf(`Rebuilding indexes completed(%d records) in %s`, idxCount, time.Since(t).String()))
-	}(time.Now())
-
-	itr, err := stor.Iterator(nil)
-	if err != nil {
-		return errors.Wrapf(err, `rebuild indexes failed. store iterator failed`)
-	}
-
-	defer itr.Close()
-
-	for itr.SeekToFirst(); itr.Valid(); itr.Next() {
-		key, err := itr.Key()
-		if err != nil {
-			return errors.Wrapf(err, `rebuild indexes failed. itr key failed`)
-		}
-
-		val, err := itr.Value()
-		if err != nil {
-			return errors.Wrapf(err, `rebuild indexes failed. itr value failed`)
-		}
-
-		if err := stores.UpdateIndexes(nil, stor, key, val); err != nil {
-			return errors.Wrapf(err, `rebuild indexes failed. cannot update indexes`)
-		}
-		idxCount++
 	}
 
 	return nil

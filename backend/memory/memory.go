@@ -186,6 +186,8 @@ func (m *memory) Delete(key []byte) error {
 
 func (m *memory) Destroy() error { return nil }
 
+func (m *memory) DeleteAll() error { return nil }
+
 func (m *memory) SetExpiry(time time.Duration) {}
 
 func (m *memory) Close() error {

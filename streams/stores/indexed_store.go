@@ -22,6 +22,7 @@ type Index interface {
 	Keys() ([]string, error)
 	Compare(key interface{}, valBefore, valAfter interface{}) (bool, error)
 	KeyIndexed(index string, key interface{}) (bool, error)
+	Backend() backend.Backend
 	Close() error
 }
 
@@ -30,6 +31,7 @@ type IndexedStore interface {
 	GetIndex(ctx context.Context, name string) (Index, error)
 	Indexes() []Index
 	GetIndexedRecords(ctx context.Context, indexName, key string) (Iterator, error)
+	RebuildIndexes() error
 }
 
 type indexedStore struct {
@@ -52,6 +54,10 @@ func NewIndexedStore(name string, keyEncoder, valEncoder encoding.Encoder, index
 		switch v := str.(type) {
 		case *store:
 			bkBuilder = v.opts.backendBuilder
+		}
+
+		if _, ok := idxs[builder.Name()]; ok {
+			return nil, errors.Errorf(`index(%s) already exists`, builder.Name())
 		}
 
 		idx, err := builder.Build(str, bkBuilder, str.KeyEncoder())
@@ -133,4 +139,41 @@ func (i *indexedStore) GetIndexedRecords(ctx context.Context, indexName, key str
 	}
 
 	return itr, nil
+}
+
+func (i *indexedStore) RebuildIndexes() error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	// Delete existing index values
+	for _, idx := range i.Indexes() {
+		if err := idx.Backend().DeleteAll(); err != nil {
+			return err
+		}
+	}
+
+	itr, err := i.Iterator(nil)
+	if err != nil {
+		return errors.Wrapf(err, `rebuild indexes failed. store iterator failed`)
+	}
+
+	defer itr.Close()
+
+	for itr.SeekToFirst(); itr.Valid(); itr.Next() {
+		key, err := itr.Key()
+		if err != nil {
+			return errors.Wrapf(err, `rebuild indexes failed. itr key failed`)
+		}
+
+		val, err := itr.Value()
+		if err != nil {
+			return errors.Wrapf(err, `rebuild indexes failed. itr value failed`)
+		}
+
+		if err := UpdateIndexes(nil, i, key, val); err != nil {
+			return errors.Wrapf(err, `rebuild indexes failed. cannot update indexes`)
+		}
+	}
+
+	return nil
 }

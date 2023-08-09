@@ -23,6 +23,7 @@ func (w *Writer) Set(key []byte, value []byte, expiry time.Duration) error {
 
 	return w.pebble.Set(key, value, pebbleDB.NoSync)
 }
+
 func (w *Writer) SetAll(kayVals []backend.KeyVal, expiry time.Duration) error {
 	defer func(begin time.Time) {
 		w.metrics.updateLatency.Observe(
@@ -38,6 +39,7 @@ func (w *Writer) SetAll(kayVals []backend.KeyVal, expiry time.Duration) error {
 
 	return w.pebble.Apply(batch, pebbleDB.NoSync)
 }
+
 func (w *Writer) Delete(key []byte) error {
 	defer func(begin time.Time) {
 		w.metrics.deleteLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), nil)
@@ -45,6 +47,11 @@ func (w *Writer) Delete(key []byte) error {
 
 	return w.pebble.Delete(key, pebbleDB.NoSync)
 }
+
+func (w *Writer) DeleteAll() error {
+	return w.pebble.DeleteRange(nil, nil, pebbleDB.NoSync)
+}
+
 func (w *Writer) Flush() error {
 	return w.pebble.Flush()
 }
