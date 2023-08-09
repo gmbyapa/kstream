@@ -117,7 +117,7 @@ func (a *kAdmin) verifyExists(topics []string) (bool, error) {
 		})
 	}
 
-	topicConfigs, err := a.admin.DescribeConfigs(context.Background(), resources) //librdKafka.SetAdminRequestTimeout(a.timeout),
+	topicConfigs, err := a.admin.DescribeConfigs(context.Background(), resources)
 
 	if err != nil {
 		return false, errors.Wrap(err, `cannot get metadata`)
@@ -189,7 +189,7 @@ func (a *kAdmin) CreateTopics(topics []*kafka.Topic) error {
 	}
 
 	result, err := a.admin.CreateTopics(context.Background(), specifications,
-		librdKafka.SetAdminRequestTimeout(a.timeout*time.Second))
+		librdKafka.SetAdminRequestTimeout(a.timeout))
 	if err != nil {
 		return errors.Wrapf(err, `could not create topics [%v]`, topics)
 	}

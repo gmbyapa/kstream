@@ -11,12 +11,17 @@ import (
 type KeyMapper func(key, val interface{}) (idx string)
 
 type IndexBuilder interface {
+	Name() string
 	Build(store ReadOnlyStore, backend backend.Builder, keyEncoder encoding.Encoder) (Index, error)
 }
 
 type IdxBuilder struct {
 	name   string
 	mapper KeyMapper
+}
+
+func (idb *IdxBuilder) Name() string {
+	return idb.name
 }
 
 func (idb *IdxBuilder) Build(store ReadOnlyStore, backend backend.Builder, keyEncoder encoding.Encoder) (Index, error) {
@@ -159,6 +164,10 @@ func (i *index) Lock() {
 
 func (i *index) Unlock() {
 	i.mu.Unlock()
+}
+
+func (i *index) Backend() backend.Backend {
+	return i.backend
 }
 
 func (i *index) Close() error {

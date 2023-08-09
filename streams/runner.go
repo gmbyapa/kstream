@@ -10,6 +10,7 @@ import (
 	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/log"
 	"sync"
+	"time"
 )
 
 type RunnerOpt func(runner *streamRunner)
@@ -28,8 +29,6 @@ func NotifyGlobalStoresReady(ch chan struct{}) RunnerOpt {
 	}
 }
 
-// run consumer and get allocation
-// on re-balance start or stop the applications
 type streamRunner struct {
 	ctx topology.BuilderContext
 
@@ -106,6 +105,10 @@ func (r *streamRunner) Run(topology topology.Topology, opts ...RunnerOpt) error 
 		}()
 
 		err = globalConsumer.Ready()
+
+		// Build IndexStore Indexes(If applicable)
+		r.rebuildStoreIndexes()
+
 		// Signal GlobalStateStore synced, regardless of error
 		r.notifyGlobalStoreSynced()
 		if err != nil {
@@ -234,4 +237,30 @@ func (r *streamRunner) notifyGlobalStoreSynced() {
 	if r.globalStateStoresReady != nil {
 		close(r.globalStateStoresReady)
 	}
+}
+
+func (r *streamRunner) rebuildStoreIndexes() {
+	r.logger.Info(`Rebuilding IndexStore indexes...`)
+	defer func(t time.Time) {
+		r.logger.Info(fmt.Sprintf(`Rebuilding IndexStore indexes completed in %s`, time.Since(t).String()))
+	}(time.Now())
+
+	wg := sync.WaitGroup{}
+	for _, stor := range r.ctx.StoreRegistry().Stores() {
+		if idxStor, ok := stor.(stores.IndexedStore); ok {
+			wg.Add(1)
+			go func(store stores.IndexedStore) {
+				r.logger.Info(fmt.Sprintf(`Rebuilding IndexStore [%s] indexes...`, stor))
+				defer func(t time.Time) {
+					r.logger.Info(fmt.Sprintf(`Rebuilding IndexStore [%s] indexes completed in %s`, stor, time.Since(t).String()))
+				}(time.Now())
+				defer wg.Done()
+
+				if err := store.RebuildIndexes(); err != nil {
+					panic(err)
+				}
+			}(idxStor)
+		}
+	}
+	wg.Wait()
 }

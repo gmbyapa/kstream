@@ -40,6 +40,7 @@ type Writer interface {
 	// Set writes the given key:value pair with an optional expiry
 	Set(key []byte, value []byte, expiry time.Duration) error
 	Delete(key []byte) error
+	DeleteAll() error
 	Flush() error
 	Close() error
 }
