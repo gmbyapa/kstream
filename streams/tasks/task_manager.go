@@ -109,18 +109,19 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 	taskOpts.apply(t.taskOpts...)
 
 	tsk := &task{
-		id:                 id,
-		logger:             logger,
-		ctx:                topologyCtx,
-		session:            session,
-		subTopology:        subTp,
-		producer:           producer,
-		processingStopping: make(chan struct{}),
-		closing:            make(chan struct{}),
-		ready:              make(chan struct{}),
-		dataChan:           make(chan *Record, 10),
-		changelogs:         async.NewRunGroup(logger),
-		options:            taskOpts,
+		id:                    id,
+		logger:                logger,
+		ctx:                   topologyCtx,
+		session:               session,
+		subTopology:           subTp,
+		producer:              producer,
+		processingStopping:    make(chan struct{}),
+		processingLoopStopped: make(chan struct{}),
+		closing:               make(chan struct{}),
+		ready:                 make(chan struct{}),
+		dataChan:              make(chan *Record, 10),
+		changelogs:            async.NewRunGroup(logger),
+		options:               taskOpts,
 	}
 
 	tsk.metrics.reporter = ctx.MetricsReporter().Reporter(metrics.ReporterConf{
@@ -211,7 +212,8 @@ func (t *taskManager) addGlobalTask(ctx topology.BuilderContext, id TaskID, subT
 func (t *taskManager) RemoveTask(id TaskID) error {
 	tsk, ok := t.tasks.Load(id.String())
 	if !ok {
-		return errors.Errorf(`task [%s] doesn't exists`, id)
+		t.logger.Warn(fmt.Sprintf(`task [%s] doesn't exists. Ignoring`, id))
+		return nil
 	}
 
 	if err := tsk.(Task).Stop(); err != nil {

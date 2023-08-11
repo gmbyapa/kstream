@@ -23,6 +23,7 @@ type DeliveryReport interface {
 type ProducerErr interface {
 	error
 	RequiresRestart() bool
+	TxnRequiresAbort() bool
 }
 
 type ProducerProvider interface {

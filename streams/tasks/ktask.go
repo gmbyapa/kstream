@@ -107,15 +107,15 @@ func (t taskId) Partition() int32 {
 }
 
 type task struct {
-	id                 TaskID
-	subTopology        topology.SubTopology
-	global             bool
-	session            kafka.GroupSession
-	blockingMode       bool
-	logger             log.Logger
-	processingStopping chan struct{}
-	closing            chan struct{}
-	ready              chan struct{}
+	id                    TaskID
+	subTopology           topology.SubTopology
+	global                bool
+	session               kafka.GroupSession
+	logger                log.Logger
+	processingStopping    chan struct{}
+	processingLoopStopped chan struct{}
+	closing               chan struct{}
+	ready                 chan struct{}
 
 	dataChan chan *Record
 
@@ -285,8 +285,6 @@ func (t *task) process(record *Record) error {
 }
 
 func (t *task) Start(ctx context.Context, claim kafka.PartitionClaim, _ kafka.GroupSession) {
-	t.blockingMode = true
-
 	stopping := make(chan struct{}, 1)
 	t.consumerLoops.Add(1)
 
@@ -315,15 +313,19 @@ MAIN:
 	}
 
 	t.consumerLoops.Done()
-	t.logger.Error(fmt.Sprintf(`Message loop stopped for %s`, claim.TopicPartition()))
+	t.logger.Info(fmt.Sprintf(`Message loop stopped. Partition %s`, claim.TopicPartition()))
 }
 
 func (t *task) start() {
 	stopping := make(chan struct{}, 1)
 	go func() {
 		<-t.processingStopping
-		t.logger.Info(fmt.Sprintf(`Stop signal received. Stopping processing loop %s`, t.ID()))
-		stopping <- struct{}{}
+		t.logger.Info(`Stop signal received. Task stopping, Weiting until consume processes stopped`)
+
+		// Waiting until data processing(consume) loops stops
+		t.consumerLoops.Wait()
+		t.logger.Info(`Consume processes stopped, sending stop signel to main processing loop`)
+		close(stopping)
 	}()
 
 	var once sync.Once
@@ -366,13 +368,22 @@ MAIN:
 		}
 	}
 
+	// Consumer loops are no longer sending data into data chan. Its safe to close
 	close(t.dataChan)
 
-	t.logger.Info(fmt.Sprintf(`Processing loop stopped for %s`, t.ID()))
+	// Trigger the end of main processing loop
+	close(t.processingLoopStopped)
+	t.logger.Info(`Processing loop stopped`)
 }
 
 func (t *task) reProcessCommitBuffer(err error, records []*Record) {
 	t.logger.Warn(fmt.Sprintf(`Reprocessing commit buffer due to %s`, err))
+
+	// If commit buffer is closing no point reprocessing the buffer(The task is closing)
+	if t.commitBuffer.Closing() {
+		t.logger.Warn(fmt.Sprintf(`Ignoring commit buffer reset due to CommitBuffer closing`))
+		return
+	}
 
 	if len(records) < 1 {
 		records = make([]*Record, len(t.commitBuffer.Records()))
@@ -409,11 +420,6 @@ func (t *task) Stop() error {
 
 func (t *task) shutdown(err error) {
 	t.shutDownOnce.Do(func() {
-		// close sub topology
-		if err := t.subTopology.Close(); err != nil {
-			panic(fmt.Sprintf(`sub-topology close error due to %s`, err))
-		}
-
 		if err != nil {
 			t.logger.Info(fmt.Sprintf(`Stopping..., due to %s`, err))
 		} else {
@@ -422,16 +428,25 @@ func (t *task) shutdown(err error) {
 
 		defer t.logger.Info(`Stopped`)
 
-		t.changelogs.Stop()
+		t.commitBuffer.MarkAsCosing()
 
-		if t.blockingMode {
-			t.logger.Info(`Waiting until processing stopped...`)
-			close(t.processingStopping)
-			t.consumerLoops.Wait()
-			t.logger.Info(`Processing stopped`)
+		// Close sub topology.
+		t.logger.Info(`Closing Sub Topology...`)
+		if err := t.subTopology.Close(); err != nil {
+			panic(fmt.Sprintf(`sub-topology close error due to %s`, err))
 		}
+		t.logger.Info(`Sub Topology closed`)
 
-		// Wait until processing loop exit
+		// make suer changelog are stopped
+		t.logger.Info(`Closing changelogs...`)
+		t.changelogs.Stop()
+		t.logger.Info(`Changelogs closed`)
+
+		t.logger.Info(`Sending processingStopping signal and waiting until processing stopped...`)
+		close(t.processingStopping)
+		<-t.processingLoopStopped
+		t.logger.Info(`Processing stopped`)
+
 		if err := t.commitBuffer.Close(); err != nil {
 			t.logger.Warn(err)
 		}
