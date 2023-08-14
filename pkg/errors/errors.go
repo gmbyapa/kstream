@@ -35,6 +35,11 @@ func UnWrapRecursivelyUntil(err error, asserter func(unWrapped error) bool) erro
 		return nil
 	}
 
+	// Nothing to be unwrapped
+	if asserter(err) {
+		return err
+	}
+
 	unWrapped := errors.Unwrap(err)
 	if asserter(unWrapped) {
 		return unWrapped

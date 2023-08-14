@@ -22,6 +22,8 @@ type Buffer interface {
 	Close() error
 	Reset(dueTo error) error
 	Records() []*Record
+	Closing() bool
+	MarkAsCosing()
 }
 
 type BufferConfig struct {
@@ -48,6 +50,7 @@ type commitBuffer struct {
 	metrics struct {
 		batchSize metrics.Counter
 	}
+	closing bool
 
 	logger log.Logger
 }
@@ -72,11 +75,11 @@ func newCommitBuffer(topology topology.SubTopology, producer kafka.Producer, ses
 
 func (b *commitBuffer) Init() error {
 	if err := b.producer.InitTransactions(context.Background()); err != nil {
-		panic(err)
+		b.handleTxError(b.logger, b.producer, err, `Buffer Init failed, cannot init transaction'`)
 	}
 
 	if err := b.producer.BeginTransaction(); err != nil {
-		panic(err)
+		b.handleTxError(b.logger, b.producer, err, `Buffer Init failed, cannot begin transaction`)
 	}
 
 	return nil
@@ -175,7 +178,7 @@ func (b *commitBuffer) commit() error {
 
 func (b *commitBuffer) Reset(dueTo error) error {
 	b.logger.Warn(fmt.Sprintf(`Commit Buffer resetting due to %s...`, dueTo))
-	defer b.logger.Info(`Commit Buffer resetted`)
+	defer b.logger.Info(`Commit Buffer rested`)
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -187,17 +190,55 @@ func (b *commitBuffer) Reset(dueTo error) error {
 	}
 
 	if err := b.producer.AbortTransaction(context.Background()); err != nil {
-		return errors.Wrap(err, `transaction abort failed`)
+		b.handleTxError(b.logger, b.producer, err, `AbortTransaction error`)
+		goto OffsetReset // handleTxError will begin the transaction
 	}
 
 	if err := b.producer.BeginTransaction(); err != nil {
-		return errors.Wrap(err, `transaction begin failed`)
+		b.handleTxError(b.logger, b.producer, err, `BeginTransaction error`)
 	}
 
+OffsetReset:
 	b.offsetMap = map[string]kafka.ConsumerOffset{}
 	b.records = nil
 
 	return nil
+}
+
+func (b *commitBuffer) handleTxError(logger log.Logger, producer kafka.TransactionalProducer, err error, reason string) {
+	if b.closing {
+		logger.Warn(`handleTxError ignoring err (%s) due to CommitBuffer closing`)
+		return
+	}
+
+	producerErr := errors.UnWrapRecursivelyUntil(err, func(err error) bool {
+		_, ok := err.(kafka.ProducerErr)
+		return ok
+	})
+
+	if producerErr.(kafka.ProducerErr).TxnRequiresAbort() {
+		logger.Warn(fmt.Sprintf(`Transaction aborting. Reason:%s, Err:%s, retrying...`, reason, err))
+		if err := producer.AbortTransaction(nil); err != nil {
+			b.handleTxError(logger, producer, err, `tx abort failed`)
+		}
+	}
+
+	if ok := producerErr.(kafka.ProducerErr).RequiresRestart(); ok {
+		logger.Error(fmt.Sprintf(`Libkrkafka FATAL error restarting producer client. Reason:%s, Err:%s`, reason, err))
+
+		// Re-initiate producer client
+		if restartErr := producer.Restart(); restartErr != nil {
+			panic(restartErr)
+		}
+	}
+
+	if err := producer.InitTransactions(nil); err != nil {
+		b.handleTxError(logger, producer, err, `transaction init failed`)
+	}
+
+	if err := producer.BeginTransaction(); err != nil {
+		b.handleTxError(logger, producer, err, `transaction begin failed`)
+	}
 }
 
 func (b *commitBuffer) Close() error {
@@ -205,4 +246,12 @@ func (b *commitBuffer) Close() error {
 	defer b.logger.Info(`Commit Buffer closed`)
 
 	return b.Flush()
+}
+
+func (b *commitBuffer) Closing() bool {
+	return b.closing
+}
+
+func (b *commitBuffer) MarkAsCosing() {
+	b.closing = true
 }

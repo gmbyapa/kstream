@@ -17,11 +17,16 @@ import (
 
 type Err struct {
 	error
-	reInit bool
+	restart     bool
+	shouldAbort bool
+}
+
+func (e Err) TxnRequiresAbort() bool {
+	return e.shouldAbort
 }
 
 func (t Err) RequiresRestart() bool {
-	return t.reInit
+	return t.restart
 }
 
 type librdTxProducer struct {
@@ -144,30 +149,19 @@ func (p *librdTxProducer) handleTxError(ctx context.Context, err error, reason s
 	}
 
 	if err.(librdKafka.Error).TxnRequiresAbort() {
-		p.config.Logger.WarnContext(ctx, fmt.Sprintf(`Transaction aborting, %s due to (%s), retrying...`, reason, err))
-		return p.AbortTransaction(ctx)
-	}
-
-	if fatal := p.librdProducer.librdProducer().GetFatalError(); fatal != nil || err.(librdKafka.Error).IsFatal() {
-		p.config.Logger.ErrorContext(ctx, fmt.Sprintf(`%s Libkrkafka FATAL error %s`, reason, err))
-
-		// Re-initate producer client
-		if restartErr := p.Restart(); restartErr != nil {
-			panic(restartErr)
+		return Err{
+			error:       err,
+			shouldAbort: true,
 		}
 	}
 
-	if err := p.InitTransactions(ctx); err != nil {
-		return p.handleTxError(ctx, err, `transaction init failed`, func() error {
-			return p.InitTransactions(ctx)
-		})
+	if fatal := p.librdProducer.librdProducer().GetFatalError(); fatal != nil ||
+		err.(librdKafka.Error).IsFatal() || err.(librdKafka.Error).Code() == librdKafka.ErrState {
+		return Err{
+			error:   err,
+			restart: true,
+		}
 	}
 
-	if err := p.BeginTransaction(); err != nil {
-		return p.handleTxError(ctx, err, `transaction begin failed`, func() error {
-			return p.BeginTransaction()
-		})
-	}
-
-	return &Err{error: err, reInit: true}
+	return err
 }

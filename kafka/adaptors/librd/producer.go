@@ -12,7 +12,6 @@ import (
 	"fmt"
 	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/gmbyapa/kstream/v2/kafka"
-	"github.com/gmbyapa/kstream/v2/kafka/adaptors/sarama"
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
@@ -48,7 +47,6 @@ type librdProducer struct {
 	mu *sync.RWMutex
 
 	partitionCounts *sync.Map
-	adminClient     kafka.Admin
 }
 
 type producerProvider struct {
@@ -87,12 +85,6 @@ func NewProducer(configs *ProducerConfig) (kafka.Producer, error) {
 		return nil, errors.Wrap(err, `invalid producer configs`)
 	}
 
-	// Create an admin client to fetch topic metadata
-	admin, err := sarama.NewAdmin(configs.BootstrapServers)
-	if err != nil {
-		return nil, errors.Wrap(err, `metadata fetch failed`)
-	}
-
 	loggerPrefix := `Producer`
 	if configs.Transactional.Enabled {
 		loggerPrefix = `TransactionalProducer`
@@ -111,7 +103,6 @@ func NewProducer(configs *ProducerConfig) (kafka.Producer, error) {
 	p := &librdProducer{
 		config:          configs,
 		baseProducer:    producer,
-		adminClient:     admin,
 		partitionCounts: new(sync.Map),
 		mu:              &sync.RWMutex{},
 	}
