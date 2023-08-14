@@ -75,11 +75,11 @@ func newCommitBuffer(topology topology.SubTopology, producer kafka.Producer, ses
 
 func (b *commitBuffer) Init() error {
 	if err := b.producer.InitTransactions(context.Background()); err != nil {
-		b.handleTxError(b.logger, b.producer, err, `Buffer Init failed`)
+		b.handleTxError(b.logger, b.producer, err, `Buffer Init failed, cannot init transaction'`)
 	}
 
 	if err := b.producer.BeginTransaction(); err != nil {
-		b.handleTxError(b.logger, b.producer, err, `Buffer Init failed`)
+		b.handleTxError(b.logger, b.producer, err, `Buffer Init failed, cannot begin transaction`)
 	}
 
 	return nil
