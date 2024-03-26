@@ -7,7 +7,7 @@ require (
 	github.com/awalterschulze/gographviz v0.0.0-20190522210029-fa59802746ab
 	github.com/bxcodec/faker/v3 v3.8.0
 	github.com/cockroachdb/pebble v0.0.0-20221005185728-eec7375f9c44
-	github.com/confluentinc/confluent-kafka-go v1.9.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.3.0
 	github.com/google/uuid v1.3.0
 	github.com/gorilla/handlers v1.4.2
 	github.com/gorilla/mux v1.8.0
@@ -56,7 +56,6 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/rs/zerolog v1.28.0 // indirect
-	github.com/stretchr/testify v1.8.2 // indirect
 	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa // indirect
 	golang.org/x/exp v0.0.0-20220827204233-334a2380cb91 // indirect
 	golang.org/x/net v0.8.0 // indirect

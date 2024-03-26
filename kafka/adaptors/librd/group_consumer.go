@@ -3,13 +3,14 @@ package librd
 import (
 	"context"
 	"fmt"
-	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
+	"sync"
+	"time"
+
+	librdKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
-	"sync"
-	"time"
 )
 
 type stopSignal struct {

@@ -10,9 +10,10 @@ package librd
 import (
 	"context"
 	"fmt"
-	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/gmbyapa/kstream/v2/kafka"
 	"time"
+
+	librdKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/gmbyapa/kstream/v2/kafka"
 )
 
 type Err struct {
