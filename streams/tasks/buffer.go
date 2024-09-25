@@ -3,12 +3,13 @@ package tasks
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/gmbyapa/kstream/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/metrics"
-	"sync"
-	"time"
 
 	"github.com/tryfix/log"
 )
@@ -218,7 +219,7 @@ func (b *commitBuffer) handleTxError(logger log.Logger, producer kafka.Transacti
 
 	if producerErr.(kafka.ProducerErr).TxnRequiresAbort() {
 		logger.Warn(fmt.Sprintf(`Transaction aborting. Reason:%s, Err:%s, retrying...`, reason, err))
-		if err := producer.AbortTransaction(nil); err != nil {
+		if err := producer.AbortTransaction(context.Background()); err != nil {
 			b.handleTxError(logger, producer, err, `tx abort failed`)
 		}
 	}
