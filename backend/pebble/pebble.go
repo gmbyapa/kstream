@@ -14,7 +14,9 @@ import (
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
-	//"sync"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 type Config struct {
@@ -44,7 +46,7 @@ type Pebble struct {
 	*Reader
 	*Writer
 	metrics struct {
-		storageSize metrics.Gauge
+		storageSize metrics.GaugeFunc
 	}
 }
 
@@ -67,7 +69,7 @@ func NewPebbleBackend(name string, config *Config) (*Pebble, error) {
 	m.Reader = &Reader{pebble: pb, name: dbName}
 	m.Writer = &Writer{pebble: pb}
 
-	constLabels := map[string]string{`name`: name, `type`: `memory`}
+	constLabels := map[string]string{`name`: strings.ReplaceAll(name, `-`, `_`), `type`: `pebble`}
 	m.Reader.metrics.readLatency = config.MetricsReporter.Observer(
 		metrics.MetricConf{Path: `backend_read_latency_microseconds`, ConstLabels: constLabels})
 	m.Reader.metrics.iteratorLatency = config.MetricsReporter.Observer(
@@ -76,8 +78,10 @@ func NewPebbleBackend(name string, config *Config) (*Pebble, error) {
 		metrics.MetricConf{Path: `backend_read_prefix_iterator_latency_microseconds`, ConstLabels: constLabels})
 	m.Writer.metrics.updateLatency = config.MetricsReporter.Observer(
 		metrics.MetricConf{Path: `backend_update_latency_microseconds`, ConstLabels: constLabels})
-	m.metrics.storageSize = config.MetricsReporter.Gauge(
-		metrics.MetricConf{Path: `backend_storage_size`, ConstLabels: constLabels})
+	m.metrics.storageSize = config.MetricsReporter.GaugeFunc(
+		metrics.MetricConf{Path: `backend_storage_size_bytes`, ConstLabels: constLabels}, func() float64 {
+			return float64(m.storageSize(dbName))
+		})
 	m.Writer.metrics.deleteLatency = config.MetricsReporter.Observer(
 		metrics.MetricConf{Path: `backend_delete_latency_microseconds`, ConstLabels: constLabels})
 
@@ -101,6 +105,24 @@ func (p *Pebble) Cache() backend.Cache {
 		batch: p.pebble.NewIndexedBatch(),
 		//mu:    &sync.Mutex{},
 	}
+}
+
+func (p *Pebble) storageSize(folderPath string) int64 {
+	var size int64
+	err := filepath.Walk(folderPath, func(_ string, info os.FileInfo, err error) error {
+		if info == nil {
+			return nil
+		}
+		if !info.IsDir() {
+			size += info.Size()
+		}
+		return err
+	})
+	if err != nil {
+		p.logger.Error(fmt.Sprintf(`metrics: storage size calulate due to %s`, err))
+	}
+
+	return size
 }
 
 func keyUpperBound(b []byte) []byte {

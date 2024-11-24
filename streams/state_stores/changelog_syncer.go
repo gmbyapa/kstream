@@ -3,6 +3,7 @@ package state_stores
 import (
 	"context"
 	"fmt"
+	"github.com/tryfix/metrics"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,6 +26,13 @@ type changelogSyncer struct {
 	running     chan struct{}
 
 	mu *sync.Mutex
+
+	metricsReporter metrics.Reporter
+	metrics         struct {
+		recoveryLatency     metrics.Gauge
+		recoveryProgress    metrics.Gauge
+		indexRebuildLatency metrics.Gauge
+	}
 }
 
 func (lg *changelogSyncer) Sync(ctx context.Context, synced chan struct{}) error {
@@ -64,17 +72,30 @@ func (lg *changelogSyncer) startSync(ctx context.Context, partition kafka.Partit
 		close(synced)
 	}()
 
+	lg.metrics.recoveryLatency = lg.metricsReporter.Gauge(metrics.MetricConf{
+		Path: "recovery_duration_milliseconds",
+	})
+	lg.metrics.recoveryProgress = lg.metricsReporter.Gauge(metrics.MetricConf{
+		Path: "recovery_progress",
+	})
+	lg.metrics.indexRebuildLatency = lg.metricsReporter.Gauge(metrics.MetricConf{
+		Path: "recovery_store_index_rebuild_latency_milliseconds",
+	})
+
+	recoveryStart := time.Now()
+
 	var syncedCount int64
 	go func(tic *time.Ticker) {
 		for range tic.C {
 			if partition.EndOffset() < 1 {
 				continue
 			}
-			lg.logger.Info(
-				fmt.Sprintf(
-					`Sync progress - [%d]%% done (%d/%d)`,
-					atomic.LoadInt64(&syncedCount)*100/int64(partition.EndOffset()),
-					atomic.LoadInt64(&syncedCount), int64(partition.EndOffset())))
+			progress := atomic.LoadInt64(&syncedCount) * 100 / int64(partition.EndOffset())
+			lg.metrics.recoveryProgress.Set(float64(progress), nil)
+			lg.logger.Info(fmt.Sprintf(
+				`Sync progress - [%d]%% done (%d/%d)`,
+				progress,
+				atomic.LoadInt64(&syncedCount), int64(partition.EndOffset())))
 		}
 	}(ticker)
 	syncStarted := time.Now()
@@ -90,13 +111,16 @@ MAIN:
 		case <-lg.stopping:
 			lg.logger.Info(`Consumer loop stopping due to stop signal`)
 			break MAIN
+
 		case event := <-partition.Events():
 			switch e := event.(type) {
 			case kafka.Record:
 				atomic.AddInt64(&syncedCount, 1)
+
 				// Handle tombstones
 				if idxStor, ok := lg.store.(stores.IndexedStore); ok && len(idxStor.Indexes()) > 0 {
 					// If recovery is in progress
+					// so just update the store(Indexes will be rebuild later)
 					if syncing {
 						if err := lg.updateStore(e); err != nil {
 							lg.logger.Error(fmt.Sprintf(`Cannot update store due to %s`, err))
@@ -133,6 +157,9 @@ MAIN:
 						syncedCount,
 						time.Since(syncStarted).String()))
 					ticker.Stop()
+
+					lg.metrics.recoveryLatency.Set(float64(time.Since(recoveryStart).Milliseconds()), nil)
+					lg.metrics.recoveryProgress.Set(float64(100), nil)
 
 					// Send partition sync completed signal
 					synced <- struct{}{}

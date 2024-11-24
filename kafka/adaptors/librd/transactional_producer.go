@@ -10,7 +10,7 @@ package librd
 import (
 	"context"
 	"fmt"
-	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
+	librdKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/kafka"
 	"time"
 )
@@ -31,6 +31,7 @@ func (t Err) RequiresRestart() bool {
 
 type librdTxProducer struct {
 	*librdProducer
+	txBegin bool
 }
 
 func (p *librdTxProducer) InitTransactions(ctx context.Context) error {
@@ -38,7 +39,7 @@ func (p *librdTxProducer) InitTransactions(ctx context.Context) error {
 		p.metrics.transactions.initLatency.Observe(float64(time.Since(begin).Microseconds()), nil)
 	}(time.Now())
 
-	if err := p.librdProducer.librdProducer().InitTransactions(ctx); err != nil {
+	if err := p.librdProducer.baseProducer.InitTransactions(ctx); err != nil {
 		return p.handleTxError(ctx, err, `transaction init failed`, func() error {
 			return p.InitTransactions(ctx)
 		})
@@ -50,11 +51,13 @@ func (p *librdTxProducer) InitTransactions(ctx context.Context) error {
 }
 
 func (p *librdTxProducer) BeginTransaction() error {
-	if err := p.librdProducer.librdProducer().BeginTransaction(); err != nil {
+	if err := p.librdProducer.baseProducer.BeginTransaction(); err != nil {
 		return p.handleTxError(context.Background(), err, `transaction begin failed`, func() error {
 			return p.BeginTransaction()
 		})
 	}
+
+	p.txBegin = true
 
 	return nil
 }
@@ -64,7 +67,9 @@ func (p *librdTxProducer) CommitTransaction(ctx context.Context) error {
 		p.metrics.transactions.commitLatency.Observe(float64(time.Since(begin).Microseconds()), nil)
 	}(time.Now())
 
-	if err := p.librdProducer.librdProducer().CommitTransaction(ctx); err != nil {
+	defer p.resetState()
+
+	if err := p.librdProducer.baseProducer.CommitTransaction(ctx); err != nil {
 		return p.handleTxError(ctx, err, `transaction commit failed`, func() error {
 			return p.CommitTransaction(ctx)
 		})
@@ -86,7 +91,13 @@ func (p *librdTxProducer) SendOffsetsToTransaction(ctx context.Context, offsets 
 		})
 	}
 
-	if err := p.librdProducer.librdProducer().SendOffsetsToTransaction(ctx, kOffsets, meta.Meta.(*librdKafka.ConsumerGroupMetadata)); err != nil {
+	if !p.txBegin {
+		if err := p.BeginTransaction(); err != nil {
+			panic(err)
+		}
+	}
+
+	if err := p.librdProducer.baseProducer.SendOffsetsToTransaction(ctx, kOffsets, meta.Meta.(*librdKafka.ConsumerGroupMetadata)); err != nil {
 		return p.handleTxError(ctx, err, `transaction SendOffsetsToTransaction failed`, func() error {
 			return p.SendOffsetsToTransaction(ctx, offsets, meta)
 		})
@@ -98,11 +109,13 @@ func (p *librdTxProducer) SendOffsetsToTransaction(ctx context.Context, offsets 
 }
 
 func (p *librdTxProducer) AbortTransaction(ctx context.Context) error {
+	defer p.resetState()
+
 	defer func(begin time.Time) {
 		p.metrics.transactions.abortLatency.Observe(float64(time.Since(begin).Microseconds()), nil)
 	}(time.Now())
 
-	if err := p.librdProducer.librdProducer().AbortTransaction(ctx); err != nil && err.(librdKafka.Error).Code() != librdKafka.ErrState {
+	if err := p.librdProducer.baseProducer.AbortTransaction(ctx); err != nil && err.(librdKafka.Error).Code() != librdKafka.ErrState {
 		return p.handleTxError(ctx, err, `transaction abort failed`, func() error {
 			return p.AbortTransaction(ctx)
 		})
@@ -124,12 +137,18 @@ func (p *librdTxProducer) ProduceAsync(ctx context.Context, message kafka.Record
 		})
 	}(time.Now())
 
+	if !p.txBegin {
+		if err := p.BeginTransaction(); err != nil {
+			panic(err)
+		}
+	}
+
 	kMessage, err := p.prepareMessage(message)
 	if err != nil {
 		return p.handleTxError(ctx, err, `prepareMessage failed`, nil)
 	}
 
-	err = p.librdProducer.librdProducer().Produce(kMessage, nil)
+	err = p.librdProducer.baseProducer.Produce(kMessage, nil)
 	if err != nil {
 		return p.handleTxError(ctx, err, `ProduceAsync failed`, nil)
 	}
@@ -143,20 +162,24 @@ func (p *librdTxProducer) handleTxError(ctx context.Context, err error, reason s
 	p.config.Logger.WarnContext(ctx, fmt.Sprintf(`Retring transaction. Reason: %s, Error %s`, reason, err))
 	p.metrics.produceErrors.Count(1, map[string]string{`error`: fmt.Sprint(err)})
 
-	if err.(librdKafka.Error).IsRetriable() {
+	librdErr := err.(librdKafka.Error)
+
+	if librdErr.IsRetriable() || librdErr.IsTimeout() {
 		p.config.Logger.WarnContext(ctx, fmt.Sprintf(`%s due to (%s), retrying...`, reason, err))
 		return retry()
 	}
 
-	if err.(librdKafka.Error).TxnRequiresAbort() {
+	defer p.resetState()
+
+	if librdErr.TxnRequiresAbort() || librdErr.Code() == librdKafka.ErrQueueFull {
 		return Err{
 			error:       err,
 			shouldAbort: true,
 		}
 	}
 
-	if fatal := p.librdProducer.librdProducer().GetFatalError(); fatal != nil ||
-		err.(librdKafka.Error).IsFatal() || err.(librdKafka.Error).Code() == librdKafka.ErrState {
+	if fatal := p.librdProducer.baseProducer.GetFatalError(); fatal != nil ||
+		librdErr.IsFatal() || librdErr.Code() == librdKafka.ErrState || librdErr.Code() == librdKafka.ErrFatal {
 		return Err{
 			error:   err,
 			restart: true,
@@ -164,4 +187,8 @@ func (p *librdTxProducer) handleTxError(ctx context.Context, err error, reason s
 	}
 
 	return err
+}
+
+func (p *librdTxProducer) resetState() {
+	p.txBegin = false
 }

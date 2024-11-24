@@ -30,51 +30,62 @@ const (
 
 type Config struct {
 	// ApplicationId will be used as
-	// 	1 - a consumer group when using streams, and tables
-	// 	2 - topic prefix when creating repartition topics
-	// 	3 - transaction ID prefix when using producer transactions
+	// 	1 - The consumer group ID when using streams, and tables
+	// 	2 - Topic prefix when creating repartition/changelog topics
+	// 	3 - Transaction ID prefix when using producer transactions
+	//	4 - ClientID prefix in consumers and producers
 	ApplicationId string
+
 	// BootstrapServers a list of kafka Brokers
 	BootstrapServers []string
-	Store            struct {
+
+	Store struct {
 		Http struct {
 			// Enabled enable state stores http server(debug purposes only)
 			Enabled bool
 			// Host stores http server host(eg: http://localhost:8080)
 			Host string
 		}
-		// StateDir directory to store Persistable state stores
+		// StateDir - directory to store Persistable state stores
 		StateDir  string
 		Changelog struct {
-			// ReplicaCount store changelog topic(auto generated) replica count
+			// ReplicaCount - StateStore changelog topic(auto generated) replica count()
+			// Default - InternalTopicsDefaultReplicaCount
 			ReplicaCount int16
 		}
 	}
+
 	// InternalTopicsDefaultReplicaCount default replica count for auto generated topic(eg: repartition topics)
 	InternalTopicsDefaultReplicaCount int16
-	Processing                        struct {
-		// ConsumerCount number of stream consumers(default:1) to run. This can be used to scale application vertically
+
+	Processing struct {
+		// Number of stream consumers(default:1) to run. This can be used to scale application vertically
 		ConsumerCount int
-		// Guarantee end to end processing guarantee. Supported values are ExactlyOnce(default) and AtLeastOnce
+		// End to end processing guarantee. Supported values are ExactlyOnce(default) and AtLeastOnce
 		Guarantee ProcessingGuarantee
 		// Buffer defines min time or min mum of records before the flush starts
 		Buffer tasks.BufferConfig
-		// FailedMessageHandler used to handle failed messages(Process failures and serialization errors)
+		// FailedMessageHandler used to handle failed messages(non kafka Process failures and serialization errors)
 		FailedMessageHandler tasks.FailedMessageHandler
 	}
+
 	// Consumer default consumer properties
 	Consumer *kafka.GroupConsumerConfig
+
 	// Host application host(used to identify application instances)
 	Host string
+
 	// Producer default producer configs
 	Producer *kafka.ProducerConfig
+
 	// MetricsReporter default metrics reporter(default: NoopReporter)
 	MetricsReporter metrics.Reporter
+
 	// MetricsReporter default logger(default: NoopLogger)
 	Logger log.Logger
 
 	// RepartitionTopicFormatter repartition topic name formatter function
-	// (default ApplicationId-${storeName}-repartitioned)
+	// (default ApplicationId-${topic}-repartitioned)
 	RepartitionTopicNameFormatter TopicNameFormatter
 
 	// DefaultPartitioner if defined will be used in Sink operators. Eg: To, Repartition
@@ -102,7 +113,6 @@ func NewStreamBuilderConfig() *Config {
 	config.Consumer.Offsets.Commit.Auto = false
 	config.Store.StateDir = `storage`
 
-	config.Store.Changelog.ReplicaCount = 1
 	config.InternalTopicsDefaultReplicaCount = 1
 
 	config.RepartitionTopicNameFormatter = func(topic string) func(ctx topology.BuilderContext, nodeId topology.NodeId) string {
@@ -119,7 +129,7 @@ func NewStreamBuilderConfig() *Config {
 
 	// default metrics reporter
 	config.MetricsReporter = metrics.NoopReporter()
-	config.Logger = log.NewNoopLogger()
+	config.Logger = log.StdLogger.NewLog(log.WithLevel(log.INFO))
 
 	return config
 }
@@ -146,6 +156,10 @@ func (c *Config) setUp() {
 		c.Processing.FailedMessageHandler = func(err error, record kafka.Record) {
 			c.Logger.ErrorContext(record.Ctx(), err.Error())
 		}
+	}
+
+	if c.Store.Changelog.ReplicaCount < 1 {
+		c.Store.Changelog.ReplicaCount = c.InternalTopicsDefaultReplicaCount
 	}
 }
 

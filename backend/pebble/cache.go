@@ -4,7 +4,6 @@ import (
 	"github.com/cockroachdb/pebble"
 	"github.com/gmbyapa/kstream/v2/backend"
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
-	//"sync"
 	"time"
 )
 
@@ -40,11 +39,19 @@ func (c *Cache) PrefixedIterator(keyPrefix []byte) backend.Iterator {
 	opts := new(pebble.IterOptions)
 	opts.LowerBound = keyPrefix
 	opts.UpperBound = keyUpperBound(keyPrefix)
-	return &Iterator{itr: c.batch.NewIter(opts)}
+	itr, err := c.batch.NewIter(opts)
+	if err != nil {
+		panic(err)
+	}
+	return &Iterator{itr: itr}
 }
 
 func (c *Cache) Iterator() backend.Iterator {
-	return &Iterator{itr: c.batch.NewIter(new(pebble.IterOptions))}
+	itr, err := c.batch.NewIter(new(pebble.IterOptions))
+	if err != nil {
+		panic(err)
+	}
+	return &Iterator{itr: itr}
 }
 
 func (c *Cache) Delete(key []byte) error {

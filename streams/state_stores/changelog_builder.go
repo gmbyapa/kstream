@@ -2,6 +2,7 @@ package state_stores
 
 import (
 	"fmt"
+	"github.com/tryfix/metrics"
 	"sync"
 
 	"github.com/gmbyapa/kstream/v2/kafka"
@@ -121,15 +122,25 @@ func (b *changelogBuilder) Build(ctx topology.SubTopologyContext, store stores.S
 		return nil, errors.New(fmt.Sprintf(`Offset store [%s] for changelog %s is empty`, b.storeName, tp))
 	}
 
+	storeType := `store`
+	if _, ok := store.(stores.IndexedStore); ok {
+		storeType = `indexed_store`
+	}
+	metricsReporter := ctx.MetricsReporter().Reporter(metrics.ReporterConf{
+		Subsystem:   "changelog",
+		ConstLabels: map[string]string{`store`: store.Name(), `store_type`: storeType, `topic_partition`: tp.String()},
+	})
+
 	return &changelogSyncer{
-		tp:          tp,
-		offsetStore: b.offsetStore,
-		consumer:    ctx.PartitionConsumer(),
-		logger:      ctx.Logger().NewLog(logger.Prefixed(fmt.Sprintf(`StateStore(%s).ChangelogSyncer(%s)`, store.Name(), tp.String()))),
-		store:       store,
-		stopping:    make(chan struct{}, 1),
-		running:     make(chan struct{}, 1),
-		mu:          new(sync.Mutex),
+		tp:              tp,
+		offsetStore:     b.offsetStore,
+		consumer:        ctx.PartitionConsumer(),
+		logger:          ctx.Logger().NewLog(logger.Prefixed(fmt.Sprintf(`StateStore(%s).ChangelogSyncer(%s)`, store.Name(), tp.String()))),
+		store:           store,
+		stopping:        make(chan struct{}, 1),
+		running:         make(chan struct{}, 1),
+		mu:              new(sync.Mutex),
+		metricsReporter: metricsReporter,
 	}, nil
 }
 

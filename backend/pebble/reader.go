@@ -51,7 +51,11 @@ func (r *Reader) PrefixedIterator(keyPrefix []byte) backend.Iterator {
 	opts := new(pebbleDB.IterOptions)
 	opts.LowerBound = keyPrefix
 	opts.UpperBound = keyUpperBound(keyPrefix)
-	return &Iterator{itr: r.pebble.NewIter(opts)}
+	itr, err := r.pebble.NewIter(opts)
+	if err != nil {
+		panic(err)
+	}
+	return &Iterator{itr: itr}
 }
 
 func (r *Reader) Iterator() backend.Iterator {
@@ -59,7 +63,12 @@ func (r *Reader) Iterator() backend.Iterator {
 		r.metrics.prefixedIteratorLatency.Observe(float64(time.Since(begin).Nanoseconds()/1e3), nil)
 	}(time.Now())
 
-	return &Iterator{itr: r.pebble.NewIter(new(pebbleDB.IterOptions))}
+	itr, err := r.pebble.NewIter(new(pebbleDB.IterOptions))
+	if err != nil {
+		panic(err)
+	}
+
+	return &Iterator{itr: itr}
 }
 
 func (r *Reader) Close() error {

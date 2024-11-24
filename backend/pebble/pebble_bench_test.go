@@ -47,7 +47,7 @@ func seedBenchReadOnly() {
 	}
 }
 
-func BenchmarkBadger_Set(b *testing.B) {
+func BenchmarkPebble_Set(b *testing.B) {
 	conf := pebble.NewConfig()
 	tmp, err := os.MkdirTemp(``, `*`)
 	if err != nil {
@@ -70,7 +70,7 @@ func BenchmarkBadger_Set(b *testing.B) {
 	})
 }
 
-func BenchmarkBadger_Get(b *testing.B) {
+func BenchmarkPebble_Get(b *testing.B) {
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -83,7 +83,7 @@ func BenchmarkBadger_Get(b *testing.B) {
 	})
 }
 
-func BenchmarkBadger_GetSet(b *testing.B) {
+func BenchmarkPebble_GetSet(b *testing.B) {
 	conf := pebble.NewConfig()
 	tmp, err := os.MkdirTemp(``, `*`)
 	if err != nil {
@@ -111,7 +111,7 @@ func BenchmarkBadger_GetSet(b *testing.B) {
 	})
 }
 
-func BenchmarkBadger_Iterator(b *testing.B) {
+func BenchmarkPebble_Iterator(b *testing.B) {
 	b.ReportAllocs()
 
 	b.RunParallel(func(pb *testing.PB) {
@@ -130,7 +130,7 @@ func BenchmarkBadger_Iterator(b *testing.B) {
 	})
 }
 
-func BenchmarkBadger_PrefixedIterator(b *testing.B) {
+func BenchmarkPebble_PrefixedIterator(b *testing.B) {
 	b.ReportAllocs()
 
 	b.RunParallel(func(pb *testing.PB) {

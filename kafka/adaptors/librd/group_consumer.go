@@ -3,13 +3,19 @@ package librd
 import (
 	"context"
 	"fmt"
-	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
+	librdKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/tryfix/log"
 	"github.com/tryfix/metrics"
 	"sync"
 	"time"
+)
+
+const (
+	RebalanceStatusPreparing int = iota
+	RebalanceStatusRunning
+	RebalanceStatusError
 )
 
 type stopSignal struct {
@@ -31,6 +37,7 @@ type groupConsumer struct {
 
 	metricsCollectorTicker *time.Ticker
 	metrics                struct {
+		consumerBufferSize     metrics.Gauge
 		consumerBufferCapacity metrics.Gauge
 		endToEndLatency        metrics.Observer
 		status                 metrics.Gauge
@@ -123,6 +130,12 @@ func (g *groupConsumer) initMetrics() {
 		Labels:      []string{`topic_partition`},
 	})
 
+	g.metrics.consumerBufferSize = reporter.Gauge(metrics.MetricConf{
+		Path:        "consumer_buffer_size",
+		ConstLabels: constLabels,
+		Labels:      []string{`topic_partition`},
+	})
+
 	g.metrics.rebalanceLatency = reporter.Observer(metrics.MetricConf{
 		Path: "rebalance_latency_microseconds",
 	})
@@ -202,7 +215,7 @@ func (g *groupConsumer) rebalance(c *librdKafka.Consumer, event librdKafka.Event
 		g.metrics.rebalanceLatency.Observe(float64(time.Since(since).Microseconds()), nil)
 	}(time.Now())
 
-	g.metrics.status.Count(1, nil)
+	g.metrics.status.Set(float64(RebalanceStatusPreparing), nil)
 
 	switch ev := event.(type) {
 	case librdKafka.AssignedPartitions:
@@ -223,19 +236,17 @@ func (g *groupConsumer) rebalance(c *librdKafka.Consumer, event librdKafka.Event
 		}
 
 	case librdKafka.Error:
-		g.metrics.status.Count(-1, nil)
+		g.metrics.status.Set(float64(RebalanceStatusError), nil)
 		g.consumerErrors <- ev
 		return nil
 	}
 
-	g.metrics.status.Count(5, nil)
+	g.metrics.status.Set(float64(RebalanceStatusRunning), nil)
 
 	return nil
 }
 
 func (g *groupConsumer) assign(c *librdKafka.Consumer, partitions []librdKafka.TopicPartition) error {
-	g.metrics.status.Count(2, nil)
-
 	assign := newAssignment(partitions)
 	g.config.Logger.Warn(fmt.Sprintf(`Partitions %s assigning...`, assign.TPs()))
 
@@ -293,7 +304,6 @@ func (g *groupConsumer) assign(c *librdKafka.Consumer, partitions []librdKafka.T
 }
 
 func (g *groupConsumer) revoke(c *librdKafka.Consumer, partitions []librdKafka.TopicPartition) error {
-	g.metrics.status.Count(3, nil)
 	assign := newAssignment(partitions)
 
 	var pts []kafka.TopicPartition
@@ -367,10 +377,15 @@ func (g *groupConsumer) reportConsumerBufferMetrics() {
 		for range g.metricsCollectorTicker.C {
 			g.assignment.Range(func(key, value interface{}) bool {
 				ch := value.(chan kafka.Record)
-				size := float64(len(ch)) * 100 / float64(cap(ch))
-				g.metrics.consumerBufferCapacity.Count(size, map[string]string{
+				length := float64(len(ch))
+				capacity := float64(cap(ch))
+				size := length * 100 / capacity
+				labels := map[string]string{
 					`topic_partition`: key.(string),
-				})
+				}
+				g.metrics.consumerBufferCapacity.Set(size, labels)
+
+				g.metrics.consumerBufferSize.Set(capacity, labels)
 
 				return true
 			})

@@ -10,7 +10,7 @@ package librd
 import (
 	"context"
 	"fmt"
-	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
+	librdKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/tryfix/log"
@@ -43,8 +43,6 @@ type librdProducer struct {
 		}
 		produceErrors metrics.Counter
 	}
-
-	mu *sync.RWMutex
 
 	partitionCounts *sync.Map
 }
@@ -104,7 +102,6 @@ func NewProducer(configs *ProducerConfig) (kafka.Producer, error) {
 		config:          configs,
 		baseProducer:    producer,
 		partitionCounts: new(sync.Map),
-		mu:              &sync.RWMutex{},
 	}
 
 	// Drain all the delivery messages (we don't need them here. since we are relying on transaction commit).
@@ -117,44 +114,49 @@ func NewProducer(configs *ProducerConfig) (kafka.Producer, error) {
 				p.config.Logger.Error(fmt.Sprintf(`Event [%s]%s`, e.Code(), e))
 			case *librdKafka.Message:
 				p.config.Logger.Error(fmt.Sprintf(`Event %s`, e.TopicPartition.Error))
+			case *librdKafka.Stats:
+				p.config.Logger.Error(fmt.Sprintf(`Event %s`, e))
 			}
 		}
 	}()
 
 	go p.printLogs()
 
+	producerType := map[bool]string{true: `Y`, false: `N`}
+	constLabels := map[string]string{`transactional`: producerType[p.config.Transactional.Enabled]}
+
 	p.metrics.produceLatency = configs.MetricsReporter.Observer(metrics.MetricConf{
-		Path:   `kstream_producer_produced_latency_microseconds`,
-		Labels: []string{`topic`},
-		ConstLabels: map[string]string{
-			`producer_id`: configs.Id,
-			`async`:       fmt.Sprintf(`%t`, p.config.Transactional.Enabled),
-		},
+		Path:        `producer_produced_latency_microseconds`,
+		Labels:      []string{`topic`},
+		ConstLabels: constLabels,
 	})
 
 	p.metrics.transactions.commitLatency = configs.MetricsReporter.Observer(metrics.MetricConf{
-		Path:        `kstream_producer_transaction_commit_latency_microseconds`,
-		ConstLabels: map[string]string{`producer_id`: configs.Id},
+		Path:        `producer_transaction_commit_latency_microseconds`,
+		ConstLabels: constLabels,
 	})
 
 	p.metrics.transactions.initLatency = configs.MetricsReporter.Observer(metrics.MetricConf{
-		Path:        `kstream_producer_transaction_init_latency_microseconds`,
-		ConstLabels: map[string]string{`producer_id`: configs.Id},
+		Path:        `producer_transaction_init_latency_microseconds`,
+		ConstLabels: constLabels,
 	})
 
 	p.metrics.transactions.abortLatency = configs.MetricsReporter.Observer(metrics.MetricConf{
-		Path:        `kstream_producer_transaction_abort_latency_microseconds`,
-		ConstLabels: map[string]string{`producer_id`: configs.Id},
+		Path:        `producer_transaction_abort_latency_microseconds`,
+		ConstLabels: constLabels,
 	})
 
 	p.metrics.produceErrors = configs.MetricsReporter.Counter(metrics.MetricConf{
-		Path:        `kstream_producer_error_count`,
+		Path:        `producer_error_count`,
 		Labels:      []string{`error`},
-		ConstLabels: map[string]string{`producer_id`: configs.Id},
+		ConstLabels: constLabels,
 	})
 
 	if p.config.Transactional.Enabled {
-		return &librdTxProducer{p}, nil
+		return &librdTxProducer{
+			librdProducer: p,
+			txBegin:       false,
+		}, nil
 	}
 
 	return p, nil
@@ -201,7 +203,7 @@ func (p *librdProducer) ProduceSync(ctx context.Context, message kafka.Record) (
 		return 0, 0, errors.Wrapf(err, `message[%s] prepare error`, message)
 	}
 
-	err = p.librdProducer().Produce(kMessage, dChan)
+	err = p.baseProducer.Produce(kMessage, dChan)
 	if err != nil {
 		return 0, 0, errors.Wrap(err, `cannot send message`)
 	}
@@ -228,13 +230,13 @@ func (p *librdProducer) Close() error {
 	defer p.config.Logger.Info(`Producer closed`)
 
 	// Lets remove all the messages in librdkafka queues
-	if err := p.librdProducer().Purge(
+	if err := p.baseProducer.Purge(
 		librdKafka.PurgeInFlight |
 			librdKafka.PurgeNonBlocking | librdKafka.PurgeQueue); err != nil {
 		p.config.Logger.Error(err)
 	}
 
-	err := p.librdProducer().AbortTransaction(nil)
+	err := p.baseProducer.AbortTransaction(nil)
 	if err != nil {
 		if err.(librdKafka.Error).Code() == librdKafka.ErrState {
 			// No transaction in progress, ignore the error.
@@ -244,7 +246,7 @@ func (p *librdProducer) Close() error {
 		}
 	}
 
-	p.librdProducer().Close()
+	p.baseProducer.Close()
 
 	return nil
 }
@@ -262,8 +264,6 @@ func (p *librdProducer) Restart() error {
 		p.config.Logger.Fatal(err)
 	}
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.baseProducer = prd
 
 	return nil
@@ -271,7 +271,7 @@ func (p *librdProducer) Restart() error {
 
 func (p *librdProducer) printLogs() {
 	logger := p.config.Logger.NewLog(log.Prefixed(`LibrdLogs`))
-	for lg := range p.librdProducer().Logs() {
+	for lg := range p.baseProducer.Logs() {
 		switch lg.Level {
 		case 0, 1, 2:
 			logger.Error(lg.String(), `level`, lg.Level)
@@ -290,13 +290,13 @@ func (p *librdProducer) forceClose() error {
 	defer p.config.Logger.Warn(`Producer closed`)
 
 	p.config.Logger.Info(`Purging producer queues kafka.PurgeInFlight|kafka.PurgeNonBlocking|kafka.PurgeQueue`)
-	if err := p.librdProducer().Purge(
+	if err := p.baseProducer.Purge(
 		librdKafka.PurgeInFlight |
 			librdKafka.PurgeNonBlocking | librdKafka.PurgeQueue); err != nil {
 		p.config.Logger.Error(err)
 	}
 
-	p.librdProducer().Close()
+	p.baseProducer.Close()
 
 	return nil
 }
@@ -358,7 +358,7 @@ func (p *librdProducer) getPartitionCount(topic string) (int32, error) {
 		return v.(int32), nil
 	}
 
-	meta, err := p.librdProducer().GetMetadata(&topic, false, 10000) //TODO make this configurable
+	meta, err := p.baseProducer.GetMetadata(&topic, false, 10000) //TODO make this configurable
 	if err != nil {
 		return 0, errors.Wrapf(err, `metadata fetch failed for %s`, topic)
 	}
@@ -367,13 +367,6 @@ func (p *librdProducer) getPartitionCount(topic string) (int32, error) {
 	p.partitionCounts.Store(topic, count)
 
 	return count, nil
-}
-
-func (p *librdProducer) librdProducer() *librdKafka.Producer {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	return p.baseProducer
 }
 
 func toLibrdLogLevel(level log.Level) int {

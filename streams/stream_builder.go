@@ -88,6 +88,9 @@ func NewStreamBuilder(config *Config, opts ...BuilderOpt) *StreamBuilder {
 
 	b.setupOpts(opts...)
 
+	// Prefix metrics reporter
+	config.MetricsReporter = config.MetricsReporter.Reporter(metrics.ReporterConf{Subsystem: `kstream`})
+
 	b.storeRegistry = stores.NewRegistry(&stores.RegistryConfig{
 		Host:                config.Store.Http.Host,
 		HttpEnabled:         config.Store.Http.Enabled,
@@ -198,6 +201,7 @@ func (b *StreamBuilder) NewRunner() Runner {
 		groupConsumer:     b.providers.groupConsumer.NewBuilder(b.config.Consumer),
 		consumerCount:     b.config.Processing.ConsumerCount,
 		partitionConsumer: b.providers.consumer.NewBuilder(b.config.Consumer.ConsumerConfig),
+		metricsReporter:   b.config.MetricsReporter,
 		logger:            b.config.Logger.NewLog(log.Prefixed(`StreamRunner`)),
 		taskManagerBuilder: func(logger log.Logger, topologies topology.SubTopologyBuilders) (tasks.TaskManager, error) {
 			partitionConsumer, err := b.providers.consumer.NewBuilder(b.config.Consumer.ConsumerConfig)(func(config *kafka.ConsumerConfig) {

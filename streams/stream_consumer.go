@@ -49,16 +49,18 @@ func (r *streamConsumer) Run(topologyBuilder topology.Topology) error {
 
 	wg := &sync.WaitGroup{}
 	for i := 1; i <= r.consumerCount; i++ {
-		logger := r.logger.NewLog(log.Prefixed(fmt.Sprintf(`StreamConsumer#%d`, i)))
+		consumerID := fmt.Sprintf(`StreamConsumer#%d`, i)
+		logger := r.logger.NewLog(log.Prefixed(consumerID))
 		consumer, err := r.groupConsumer(func(config *kafka.GroupConsumerConfig) {
 			config.Logger = logger
-			config.Id = fmt.Sprintf(`consumer#%d`, i)
+			config.Id = consumerID
 		})
 		if err != nil {
 			return err
 		}
 
 		instance := &streamConsumerInstance{
+			id:              consumerID,
 			topologyBuilder: topologyBuilder,
 			ctx:             r.ctx,
 			generation:      generation,
