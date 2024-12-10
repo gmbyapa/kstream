@@ -10,7 +10,7 @@ package memory
 import (
 	"fmt"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"reflect"
 	"sort"
 	"testing"

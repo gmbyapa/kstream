@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"github.com/gmbyapa/kstream/v2/backend"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"math/rand"
 	"os"
 	"testing"

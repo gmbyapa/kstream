@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"time"
 )
 

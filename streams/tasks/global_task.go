@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/gmbyapa/kstream/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/pkg/async"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"sync"
 	"time"
 )

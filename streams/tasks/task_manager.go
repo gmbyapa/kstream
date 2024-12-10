@@ -8,7 +8,7 @@ import (
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"sync"
 )
 
@@ -68,7 +68,7 @@ func (t *taskManager) AddGlobalTask(ctx topology.BuilderContext, id TaskID, tp t
 }
 
 func (t *taskManager) addTask(ctx topology.BuilderContext, consumerID string, id TaskID, subTopology topology.SubTopologyBuilder, session kafka.GroupSession) (Task, error) {
-	// If task already exists, close it
+	// If the task already exists, close it
 	if tsk, ok := t.tasks.Load(id.String()); ok {
 		t.logger.Warn(fmt.Sprintf(`task %s already exists. closing...`, id))
 		if err := tsk.(Task).Stop(); err != nil {

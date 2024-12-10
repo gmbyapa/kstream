@@ -2,7 +2,7 @@ package kafka
 
 import (
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 )
 
 type ProducerConfig struct {

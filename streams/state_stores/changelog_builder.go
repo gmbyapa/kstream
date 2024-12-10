@@ -2,7 +2,7 @@ package state_stores
 
 import (
 	"fmt"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"sync"
 
 	"github.com/gmbyapa/kstream/v2/kafka"

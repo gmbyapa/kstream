@@ -3,7 +3,7 @@ package state_stores
 import (
 	"context"
 	"fmt"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"sync"
 	"sync/atomic"
 	"time"

@@ -13,7 +13,7 @@ import (
 	"github.com/gmbyapa/kstream/v2/backend"
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"os"
 	"path/filepath"
 	"strings"

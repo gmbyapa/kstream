@@ -15,7 +15,7 @@ import (
 	"github.com/gmbyapa/kstream/v2/streams/tasks"
 	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"time"
 )
 

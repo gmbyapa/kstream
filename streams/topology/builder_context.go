@@ -6,7 +6,7 @@ import (
 	"github.com/gmbyapa/kstream/v2/streams/encoding"
 	"github.com/gmbyapa/kstream/v2/streams/stores"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 )
 
 type BuilderContext interface {
