@@ -3,6 +3,7 @@ package streams
 import (
 	"context"
 	"github.com/gmbyapa/kstream/v2/kafka"
+	"github.com/gmbyapa/kstream/v2/streams/encoding"
 	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/log"
 	"time"
@@ -63,7 +64,7 @@ func (s *kSink) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut inter
 
 	keyByt, err := s.encoders.Key.Encode(kIn)
 	if err != nil {
-		return nil, nil, false, s.WrapErrWith(err, `sink key encode error`)
+		return nil, nil, false, encoding.Err{Err: s.WrapErrWith(err, `sink key encode error`)}
 	}
 
 	// If the record value is null or marked as a tombstone, tombstoner set the record value as null
@@ -73,8 +74,9 @@ func (s *kSink) Run(ctx context.Context, kIn, vIn interface{}) (kOut, vOut inter
 	} else {
 		valByt, err := s.encoders.Value.Encode(vIn)
 		if err != nil {
-			return nil, nil, false, s.WrapErrWith(err, `sink value encode error`)
+			return nil, nil, false, encoding.Err{Err: s.WrapErrWith(err, `sink value encode error`)}
 		}
+
 		recordValue = valByt
 	}
 

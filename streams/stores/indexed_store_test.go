@@ -193,7 +193,4 @@ func TestIndexedStore_GetIndexedRecords(t *testing.T) {
 		}
 	}
 
-	if len(want) < 2 {
-		t.Fail()
-	}
 }

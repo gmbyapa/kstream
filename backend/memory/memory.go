@@ -10,7 +10,7 @@ package memory
 import (
 	"github.com/gmbyapa/kstream/v2/backend"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"sync"
 	"time"
 )

@@ -13,7 +13,7 @@ package streams
 //	"github.com/tryfix/streams/streams/streams"
 //	"github.com/tryfix/streams/producer/srm"
 //	"github.com/tryfix/log"
-//	"github.com/tryfix/metrics"
+//	"github.com/tryfix/metrics/v2"
 //	"strconv"
 //	"sync"
 //	"testing"

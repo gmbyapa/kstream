@@ -2,7 +2,7 @@ package stores
 
 import (
 	"fmt"
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
 	"github.com/tryfix/log"
 	"time"
 )

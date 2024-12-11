@@ -11,7 +11,13 @@ import (
 	"github.com/gmbyapa/kstream/v2/pkg/async"
 	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
+)
+
+const (
+	TaskStatusStateRestoring int = iota
+	TaskStatusInitiating
+	TaskStatusRunning
 )
 
 type FailedMessageHandler func(err error, record kafka.Record)
@@ -129,13 +135,13 @@ type task struct {
 
 	producer kafka.Producer
 	metrics  struct {
-		reporter                              metrics.Reporter
-		initCount                             metrics.Counter
-		stateStoreRecoveryLatencyMilliseconds metrics.Observer
-		processLatencyMicroseconds            metrics.Observer
-		batchProcessLatencyMicroseconds       metrics.Observer
-		batchFlushLatencyMicroseconds         metrics.Observer
-		batchSize                             metrics.Gauge
+		reporter                          metrics.Reporter
+		stateRecoveryDurationMilliseconds metrics.Gauge
+		processLatencyMicroseconds        metrics.Observer
+		consumerBufferCapacity            metrics.GaugeFunc
+		consumerBufferSize                metrics.Gauge
+		punctuateLatency                  metrics.Observer
+		taskStatus                        metrics.Gauge
 	}
 
 	shutDownOnce sync.Once
@@ -147,23 +153,16 @@ func (t *task) ID() TaskID {
 }
 
 func (t *task) Restore() error {
-	labels := map[string]string{`topics`: t.ID().Topics(), `partition`: fmt.Sprintf(`%d`, t.ID().Partition())}
-	t.metrics.stateStoreRecoveryLatencyMilliseconds = t.metrics.reporter.Observer(metrics.MetricConf{
-		Path:        `state_store_recovery_latency_milliseconds`,
-		ConstLabels: labels,
-		Labels:      []string{`store`},
-	})
+	t.metrics.taskStatus.Set(float64(TaskStatusStateRestoring), nil)
+	defer func(start time.Time) {
+		t.metrics.stateRecoveryDurationMilliseconds.Count(float64(time.Since(start).Milliseconds()), nil)
+	}(time.Now())
 
 	// Each StateStore instance in the task has to be restored before the processing start
 	for _, store := range t.subTopology.StateStores() {
 		changelog := store
 		t.changelogs.Add(func(opts *async.Opts) error {
-			defer func(start time.Time) {
-				t.metrics.stateStoreRecoveryLatencyMilliseconds.Observe(float64(time.Since(start).Milliseconds()),
-					map[string]string{`store`: changelog.Name()})
-				opts.Ready()
-			}(time.Now())
-
+			defer opts.Ready()
 			stateSynced := make(chan struct{}, 1)
 			go func() {
 				defer async.LogPanicTrace(t.logger)
@@ -199,26 +198,7 @@ func (t *task) Restore() error {
 }
 
 func (t *task) Init() error {
-	t.metrics.processLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
-		Path:        `process_latency_microseconds`,
-		ConstLabels: map[string]string{`partition`: fmt.Sprintf(`%d`, t.ID().Partition())},
-		Labels:      []string{`topic`},
-	})
-
-	labels := map[string]string{`topics`: t.ID().Topics(), `partition`: fmt.Sprintf(`%d`, t.ID().Partition())}
-	t.metrics.batchProcessLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
-		Path:        `batch_process_latency_microseconds`,
-		ConstLabels: labels,
-	})
-	t.metrics.batchFlushLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
-		Path:        `batch_flush_latency_microseconds`,
-		ConstLabels: labels,
-	})
-
-	t.metrics.batchSize = t.metrics.reporter.Gauge(metrics.MetricConf{
-		Path:        `batch_size`,
-		ConstLabels: labels,
-	})
+	t.metrics.taskStatus.Set(float64(TaskStatusInitiating), nil)
 
 	if err := t.subTopology.Init(t.ctx); err != nil {
 		return errors.Wrapf(err, `sub-topology init failed. TaskId:%s`, t.ID())
@@ -285,6 +265,8 @@ func (t *task) process(record *Record) error {
 }
 
 func (t *task) Start(ctx context.Context, claim kafka.PartitionClaim, _ kafka.GroupSession) {
+	t.metrics.taskStatus.Set(float64(TaskStatusRunning), nil)
+
 	stopping := make(chan struct{}, 1)
 	t.consumerLoops.Add(1)
 
@@ -477,4 +459,60 @@ func (t *task) shutdown(err error) {
 
 func (t *task) Store(name string) topology.StateStore {
 	return t.subTopology.StateStores()[name]
+}
+
+func (t *task) setup() {
+	t.metrics.processLatencyMicroseconds = t.metrics.reporter.Observer(metrics.MetricConf{
+		Path:        `process_latency_microseconds`,
+		ConstLabels: map[string]string{`partition`: fmt.Sprintf(`%d`, t.ID().Partition())},
+		Labels:      []string{`topic`},
+	})
+
+	labels := map[string]string{`topics`: t.ID().Topics(), `partition`: fmt.Sprintf(`%d`, t.ID().Partition())}
+	t.metrics.taskStatus = t.metrics.reporter.Gauge(metrics.MetricConf{
+		Path:        `status`,
+		ConstLabels: labels,
+	})
+
+	t.metrics.stateRecoveryDurationMilliseconds = t.metrics.reporter.Gauge(metrics.MetricConf{
+		Path:        `state_recovery_duration_milliseconds`,
+		ConstLabels: labels,
+	})
+
+	t.metrics.punctuateLatency = t.metrics.reporter.Observer(metrics.MetricConf{
+		Path:        `punctuate_latency_microseconds`,
+		ConstLabels: labels,
+	})
+
+	capacity := float64(cap(t.dataChan))
+	t.metrics.consumerBufferCapacity = t.metrics.reporter.GaugeFunc(metrics.MetricConf{
+		Path:        "process_buffer_capacity",
+		ConstLabels: labels,
+	}, func() float64 {
+		length := float64(len(t.dataChan))
+		return length * 100 / capacity
+	})
+
+	t.metrics.consumerBufferSize = t.metrics.reporter.Gauge(metrics.MetricConf{
+		Path:        "process_buffer_size",
+		ConstLabels: labels,
+	})
+
+	t.metrics.consumerBufferSize.Count(capacity, nil)
+}
+
+func (t *task) cleanUp() {
+	t.metrics.processLatencyMicroseconds.UnRegister()
+
+	t.metrics.taskStatus.UnRegister()
+
+	t.metrics.stateRecoveryDurationMilliseconds.UnRegister()
+
+	t.metrics.consumerBufferCapacity.UnRegister()
+
+	t.metrics.consumerBufferSize.UnRegister()
+
+	t.metrics.consumerBufferSize.UnRegister()
+
+	t.metrics.punctuateLatency.UnRegister()
 }

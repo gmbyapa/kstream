@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"time"
 )
 
@@ -90,16 +90,21 @@ const (
 	ReadCommitted
 )
 
+// RecordContextBinderFunc binds a user given context to a consumer records
+// When consuming this happens before the consumer record is sent to the per partition chan
 type RecordContextBinderFunc func(record Record) context.Context
 
+// GroupConsumerConfig defines configurations for high level Group Consumer
 type GroupConsumerConfig struct {
 	*ConsumerConfig
-	GroupId string
+	GroupId string // Consumers Group ID
 	Offsets struct {
+		// Fallback offset then there no initial stored offset in kafka
+		// This is equivalent to auto.offset.reset in java consumer
 		Initial Offset
 		Commit  struct {
-			Auto     bool
-			Interval time.Duration
+			Auto     bool          // Equivalent to enable.auto.commit in java consumer
+			Interval time.Duration // Equivalent to auto.commit.interval.ms  in java consumer
 		}
 	}
 }
@@ -155,17 +160,35 @@ func NewOffsetManagerConfig() *OffsetManagerConfig {
 	}
 }
 
+// ConsumerConfig defines configurations for simple(partition) Consumer
 type ConsumerConfig struct {
-	Id                      string
-	BootstrapServers        []string
-	IsolationLevel          IsolationLevel
-	TopicMetaFetchTimeout   time.Duration
-	EOSEnabled              bool
-	MaxPollInterval         time.Duration
+	// Client ID of the consumer (client.id)
+	Id string
+
+	// List of kafka BootstrapServers
+	BootstrapServers []string
+
+	// Read Isolation level of the consumer. Supported values - ReadCommited(default), ReadUncommited
+	IsolationLevel IsolationLevel
+
+	// Topic meta fetch interval for admin operation such as fetching partition counts
+	TopicMetaFetchTimeout time.Duration
+
+	// Exactly Once Support. When this is enabled IsolationLevel will automatically set to ReadCommited
+	EOSEnabled bool
+
+	// MaxPollInterval represents the period of time the consumer waits before checking for new messages.
+	MaxPollInterval time.Duration
+
+	// ConsumerMessageChanSize defines the buffer size of the channels that receive messages for each partition.
+	// When the consumer's Poll method is called, it fetches all eligible messages for the current consumer assignment.
+	// These messages are then fanned out into per-partition channels, and this configuration sets the size of those
+	// buffers.
 	ConsumerMessageChanSize int
 
-	Logger           log.Logger
-	MetricsReporter  metrics.Reporter
+	Logger          log.Logger
+	MetricsReporter metrics.Reporter
+
 	ContextExtractor RecordContextBinderFunc
 }
 

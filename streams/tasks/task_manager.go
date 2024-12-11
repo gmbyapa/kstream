@@ -8,13 +8,13 @@ import (
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"sync"
 )
 
 type TaskManager interface {
 	NewTaskId(prefix string, tp kafka.TopicPartition) TaskID
-	AddTask(ctx topology.BuilderContext, id TaskID, topology topology.SubTopologyBuilder, session kafka.GroupSession) (Task, error)
+	AddTask(ctx topology.BuilderContext, consumerID string, id TaskID, topology topology.SubTopologyBuilder, session kafka.GroupSession) (Task, error)
 	AddGlobalTask(ctx topology.BuilderContext, id TaskID, topology topology.SubTopologyBuilder) (Task, error)
 	RemoveTask(id TaskID) error
 	Task(id TaskID) (Task, error)
@@ -59,16 +59,16 @@ func NewTaskManager(
 	}, nil
 }
 
-func (t *taskManager) AddTask(ctx topology.BuilderContext, id TaskID, tp topology.SubTopologyBuilder, session kafka.GroupSession) (Task, error) {
-	return t.addTask(ctx, id, tp, session)
+func (t *taskManager) AddTask(ctx topology.BuilderContext, consumerID string, id TaskID, tp topology.SubTopologyBuilder, session kafka.GroupSession) (Task, error) {
+	return t.addTask(ctx, consumerID, id, tp, session)
 }
 
 func (t *taskManager) AddGlobalTask(ctx topology.BuilderContext, id TaskID, tp topology.SubTopologyBuilder) (Task, error) {
 	return t.addGlobalTask(ctx, id, tp)
 }
 
-func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopology topology.SubTopologyBuilder, session kafka.GroupSession) (Task, error) {
-	// If task already exists, close it
+func (t *taskManager) addTask(ctx topology.BuilderContext, consumerID string, id TaskID, subTopology topology.SubTopologyBuilder, session kafka.GroupSession) (Task, error) {
+	// If the task already exists, close it
 	if tsk, ok := t.tasks.Load(id.String()); ok {
 		t.logger.Warn(fmt.Sprintf(`task %s already exists. closing...`, id))
 		if err := tsk.(Task).Stop(); err != nil {
@@ -76,12 +76,20 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 		}
 	}
 
+	metricsPrefix := "task_manager_task"
+
 	logger := t.logger.NewLog(log.Prefixed(id.String()))
 	producer, err := ctx.ProducerBuilder()(func(config *kafka.ProducerConfig) {
 		txID := fmt.Sprintf(`%s-%s(%s)`, ctx.ApplicationId(), id.String(), id.UniqueID())
 		config.Id = txID
 		config.Transactional.Id = txID
 		config.Logger = logger
+		config.MetricsReporter = ctx.MetricsReporter().Reporter(metrics.ReporterConf{
+			Subsystem: metricsPrefix,
+			ConstLabels: map[string]string{
+				`task_id`: id.String(),
+			},
+		})
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, `task build failed`)
@@ -125,10 +133,11 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 	}
 
 	tsk.metrics.reporter = ctx.MetricsReporter().Reporter(metrics.ReporterConf{
-		Subsystem: "task_manager_task",
+		Subsystem: metricsPrefix,
 		ConstLabels: map[string]string{
-			`task_type`: `task`,
-			`task_id`:   id.String(),
+			`sub_topology_id`: subTopology.Id().String(),
+			`consumer_id`:     consumerID,
+			`task_id`:         id.String(),
 		},
 	})
 
@@ -137,8 +146,13 @@ func (t *taskManager) addTask(ctx topology.BuilderContext, id TaskID, subTopolog
 		producer,
 		session,
 		logger.NewLog(log.Prefixed(`Buffer`)),
-		tsk.metrics.reporter,
+		tsk.metrics.reporter.Reporter(metrics.ReporterConf{
+			System:      "buffer",
+			ConstLabels: map[string]string{},
+		}),
 	)
+
+	tsk.setup()
 
 	var task Task = tsk
 
@@ -191,14 +205,14 @@ func (t *taskManager) addGlobalTask(ctx topology.BuilderContext, id TaskID, subT
 	}
 
 	tsk.metrics.reporter = ctx.MetricsReporter().Reporter(metrics.ReporterConf{
-		Subsystem: "task_manager_task",
+		Subsystem: "task_manager_global_task",
 		ConstLabels: map[string]string{
-			`task_type`: `task`,
-			`task_id`:   id.String(),
+			`task_id`: id.String(),
 		},
 	})
 
 	globalKTask := &globalTask{tsk}
+	globalKTask.setup()
 
 	if err := globalKTask.Init(); err != nil {
 		return nil, err

@@ -6,7 +6,7 @@ import (
 	"github.com/gmbyapa/kstream/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/gmbyapa/kstream/v2/streams/topology"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"sync"
 	"time"
 
@@ -31,6 +31,7 @@ type BufferConfig struct {
 	// starts(This includes messages in the state store changelogs).
 	// Please note that this value has to be lesser than the
 	// producer queue.buffering.max.messages
+	//
 	// Deprecated no longer applicable
 	Size int
 	// FlushInterval defines minimum wait time before the flush starts
@@ -48,9 +49,11 @@ type commitBuffer struct {
 	session     kafka.GroupSession
 
 	metrics struct {
-		batchSize metrics.Counter
+		commitLatency metrics.Observer
+		size          metrics.Gauge
 	}
 	closing bool
+	ctx     context.Context
 
 	logger log.Logger
 }
@@ -64,22 +67,24 @@ func newCommitBuffer(topology topology.SubTopology, producer kafka.Producer, ses
 		producer:    producer.(kafka.TransactionalProducer),
 		subTopology: topology,
 		session:     session,
+
+		ctx: context.Background(), // TODO this should get inherited from a parent context
 	}
 
-	buf.metrics.batchSize = reporter.Counter(metrics.MetricConf{
-		Path: `batch_size`,
+	buf.metrics.commitLatency = reporter.Observer(metrics.MetricConf{
+		Path: `commit_latency_milliseconds`,
+	})
+
+	buf.metrics.size = reporter.Gauge(metrics.MetricConf{
+		Path: `commit_batch_size`,
 	})
 
 	return buf
 }
 
 func (b *commitBuffer) Init() error {
-	if err := b.producer.InitTransactions(context.Background()); err != nil {
+	if err := b.producer.InitTransactions(b.ctx); err != nil {
 		b.handleTxError(b.logger, b.producer, err, `Buffer Init failed, cannot init transaction'`)
-	}
-
-	if err := b.producer.BeginTransaction(); err != nil {
-		b.handleTxError(b.logger, b.producer, err, `Buffer Init failed, cannot begin transaction`)
 	}
 
 	return nil
@@ -118,9 +123,11 @@ func (b *commitBuffer) flush() error {
 		return nil
 	}
 
-	defer func() {
-		b.metrics.batchSize.Count(float64(count), nil)
-	}()
+	defer func(t time.Time) {
+		b.metrics.commitLatency.Observe(float64(time.Since(t).Milliseconds()), nil)
+
+		b.metrics.size.Set(float64(count), nil)
+	}(time.Now())
 
 	return b.commit()
 }
@@ -135,7 +142,7 @@ func (b *commitBuffer) commit() error {
 		meta, err := b.session.GroupMeta()
 		if err != nil {
 			b.logger.Error(fmt.Sprintf(`transaction Consumer GroupMeta fetch failed due to %s, abotring transactions`, err))
-			if txAbErr := b.producer.AbortTransaction(context.Background()); txAbErr != nil {
+			if txAbErr := b.producer.AbortTransaction(b.ctx); txAbErr != nil {
 				b.logger.Warn(fmt.Sprintf(`transaction abort failed due to %s`, txAbErr))
 				return txAbErr
 			}
@@ -143,12 +150,12 @@ func (b *commitBuffer) commit() error {
 			return err
 		}
 
-		if err := b.producer.SendOffsetsToTransaction(context.Background(), offsets, meta); err != nil {
+		if err := b.producer.SendOffsetsToTransaction(b.ctx, offsets, meta); err != nil {
 			return errors.Wrap(err, `commit(SendOffsetsToTransaction) failed`)
 		}
 	}
 
-	if err := b.producer.CommitTransaction(context.Background()); err != nil {
+	if err := b.producer.CommitTransaction(b.ctx); err != nil {
 		return errors.Wrap(err, `commit(CommitTransaction) failed`)
 	}
 
@@ -158,11 +165,6 @@ func (b *commitBuffer) commit() error {
 			return errors.Wrap(err, `state stores flush failed`)
 		}
 		store.ResetCache()
-	}
-
-	// Begin a new transaction
-	if err := b.producer.BeginTransaction(); err != nil {
-		panic(err)
 	}
 
 	// Reset offsets map and records maps
@@ -189,13 +191,9 @@ func (b *commitBuffer) Reset(dueTo error) error {
 		b.subTopology.StateStores()[name].ResetCache()
 	}
 
-	if err := b.producer.AbortTransaction(context.Background()); err != nil {
+	if err := b.producer.AbortTransaction(b.ctx); err != nil {
 		b.handleTxError(b.logger, b.producer, err, `AbortTransaction error`)
 		goto OffsetReset // handleTxError will begin the transaction
-	}
-
-	if err := b.producer.BeginTransaction(); err != nil {
-		b.handleTxError(b.logger, b.producer, err, `BeginTransaction error`)
 	}
 
 OffsetReset:
@@ -218,7 +216,7 @@ func (b *commitBuffer) handleTxError(logger log.Logger, producer kafka.Transacti
 
 	if producerErr.(kafka.ProducerErr).TxnRequiresAbort() {
 		logger.Warn(fmt.Sprintf(`Transaction aborting. Reason:%s, Err:%s, retrying...`, reason, err))
-		if err := producer.AbortTransaction(nil); err != nil {
+		if err := producer.AbortTransaction(b.ctx); err != nil {
 			b.handleTxError(logger, producer, err, `tx abort failed`)
 		}
 	}
@@ -232,12 +230,8 @@ func (b *commitBuffer) handleTxError(logger log.Logger, producer kafka.Transacti
 		}
 	}
 
-	if err := producer.InitTransactions(nil); err != nil {
+	if err := producer.InitTransactions(b.ctx); err != nil {
 		b.handleTxError(logger, producer, err, `transaction init failed`)
-	}
-
-	if err := producer.BeginTransaction(); err != nil {
-		b.handleTxError(logger, producer, err, `transaction begin failed`)
 	}
 }
 

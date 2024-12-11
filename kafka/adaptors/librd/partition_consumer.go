@@ -3,11 +3,11 @@ package librd
 import (
 	"context"
 	"fmt"
-	librdKafka "github.com/confluentinc/confluent-kafka-go/kafka"
+	librdKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/tryfix/log"
-	"github.com/tryfix/metrics"
+	"github.com/tryfix/metrics/v2"
 	"sync"
 	"time"
 )
@@ -78,7 +78,7 @@ func NewPartitionConsumer(configs *ConsumerConfig) (kafka.PartitionConsumer, err
 }
 
 func (c *partitionConsumer) Partitions(_ context.Context, topic string) ([]int32, error) {
-	meta, err := c.consumer.GetMetadata(&topic, false, int(c.config.TopicMetaFetchTimeout.Milliseconds())) // TODO make this configurable
+	meta, err := c.consumer.GetMetadata(&topic, false, int(c.config.TopicMetaFetchTimeout.Milliseconds()))
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf(`cannot fetch partitions for topic [%s]'`, topic))
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/gmbyapa/kstream/v2/streams/tasks"
 	"github.com/gmbyapa/kstream/v2/streams/topology"
 	"github.com/tryfix/log"
+	"github.com/tryfix/metrics/v2"
 	"sync"
 	"time"
 )
@@ -39,10 +40,15 @@ type streamRunner struct {
 
 	topology topology.Topology
 
-	logger log.Logger
+	logger          log.Logger
+	metricsReporter metrics.Reporter
 
 	consumers struct {
 		global, stream Consumer
+	}
+
+	metrics struct {
+		indexRebuildLatency metrics.Gauge
 	}
 
 	shutDownOnce           sync.Once
@@ -59,6 +65,11 @@ func (r *streamRunner) Run(topology topology.Topology, opts ...RunnerOpt) error 
 	for _, opt := range opts {
 		opt(r)
 	}
+
+	r.metrics.indexRebuildLatency = r.metricsReporter.Gauge(metrics.MetricConf{
+		Path:   "indexed_stores_index_rebuild_latency_milliseconds",
+		Labels: []string{`store`},
+	})
 
 	// Start StoreRegistry HTTP server
 	r.ctx.StoreRegistry().StartWebServer()
@@ -253,6 +264,9 @@ func (r *streamRunner) rebuildStoreIndexes() {
 				r.logger.Info(fmt.Sprintf(`Rebuilding IndexStore [%s] indexes...`, stor))
 				defer func(t time.Time) {
 					r.logger.Info(fmt.Sprintf(`Rebuilding IndexStore [%s] indexes completed in %s`, stor, time.Since(t).String()))
+					r.metrics.indexRebuildLatency.Set(float64(time.Since(t).Milliseconds()), map[string]string{
+						`store`: store.Name(),
+					})
 				}(time.Now())
 				defer wg.Done()
 

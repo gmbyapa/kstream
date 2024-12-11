@@ -118,7 +118,7 @@ func (i *indexedStore) Indexes() []Index {
 	return idxs
 }
 
-func (i *indexedStore) GetIndexedRecords(ctx context.Context, indexName, key string) (Iterator, error) {
+func (i *indexedStore) GetIndexedRecords(_ context.Context, indexName, key string) (Iterator, error) {
 	i.mu.Lock()
 	idx, ok := i.indexes[indexName]
 	i.mu.Unlock()

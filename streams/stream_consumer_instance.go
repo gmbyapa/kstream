@@ -12,6 +12,7 @@ import (
 )
 
 type streamConsumerInstance struct {
+	id                string
 	topologyBuilder   topology.Topology
 	generation        tasks.TaskGeneration
 	currentAssignment tasks.TaskAssignment
@@ -23,7 +24,7 @@ type streamConsumerInstance struct {
 	consumer    kafka.GroupConsumer
 }
 
-func (r *streamConsumerInstance) OnPartitionRevoked(ctx context.Context, session kafka.GroupSession) error {
+func (r *streamConsumerInstance) OnPartitionRevoked(_ context.Context, session kafka.GroupSession) error {
 	r.logger.Info(fmt.Sprintf("Removing tasks -> \n%s", r.currentAssignment))
 	wg := sync.WaitGroup{}
 	wg.Add(len(r.currentAssignment))
@@ -58,7 +59,7 @@ func (r *streamConsumerInstance) OnPartitionAssigned(_ context.Context, session 
 	for _, mapping := range r.currentAssignment {
 		go func(wg *sync.WaitGroup, mapping *tasks.TaskMapping) {
 			defer wg.Done()
-			_, err := r.taskManager.AddTask(r.ctx, mapping.TaskId(), mapping.SubTopologyBuilder(), session)
+			_, err := r.taskManager.AddTask(r.ctx, r.id, mapping.TaskId(), mapping.SubTopologyBuilder(), session)
 			if err != nil {
 				panic(err)
 			}
