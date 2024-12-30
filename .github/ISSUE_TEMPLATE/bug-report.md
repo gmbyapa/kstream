@@ -15,9 +15,9 @@ assignees: ''
 
 <!-- Please specify real version numbers or git SHAs. -->
 
-| Kstream | Kafka | Go  |
-| ------ | ----- | --- |
-|        |       |     |
+| Kstream | Kafka | librdkafka | Go  |
+| ------ | ----- | --- | --- |
+|        |       |     |     |
 
 ##### Configuration
 
