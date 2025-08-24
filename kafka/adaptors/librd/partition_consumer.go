@@ -85,7 +85,13 @@ func (c *partitionConsumer) Partitions(_ context.Context, topic string) ([]int32
 
 	var partitions []int32
 	for _, tp := range meta.Topics {
+		if tp.Error.Code() != librdKafka.ErrNoError {
+			return nil, errors.Wrapf(tp.Error, `cannot fetch partitions for topic [%s]`, topic)
+		}
 		for _, pt := range tp.Partitions {
+			if pt.Error.Code() != librdKafka.ErrNoError {
+				return nil, errors.Wrapf(pt.Error, `partition error [%s#%d]`, topic, pt.ID)
+			}
 			partitions = append(partitions, pt.ID)
 		}
 	}
@@ -96,7 +102,7 @@ func (c *partitionConsumer) Partitions(_ context.Context, topic string) ([]int32
 func (c *partitionConsumer) ConsumeTopic(ctx context.Context, topic string, offset kafka.Offset) (map[int32]kafka.Partition, error) {
 	pts, err := c.Partitions(ctx, topic)
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf(`cannot fetch partitions fopr topic {%s}`, topic))
+		return nil, errors.Wrap(err, fmt.Sprintf(`cannot fetch partitions for topic {%s}`, topic))
 	}
 
 	partitions := map[int32]kafka.Partition{}
@@ -112,7 +118,7 @@ func (c *partitionConsumer) ConsumeTopic(ctx context.Context, topic string, offs
 	return partitions, nil
 }
 
-func (c *partitionConsumer) ConsumePartition(ctx context.Context, topic string, ptt int32, offset kafka.Offset) (kafka.Partition, error) {
+func (c *partitionConsumer) ConsumePartition(_ context.Context, topic string, ptt int32, offset kafka.Offset) (kafka.Partition, error) {
 	pId := kafka.TopicPartition{
 		Topic:     topic,
 		Partition: ptt,
@@ -121,7 +127,7 @@ func (c *partitionConsumer) ConsumePartition(ctx context.Context, topic string, 
 	// fetch offset information
 	oldest, err := c.GetOffsetOldest(topic, ptt)
 	if err != nil {
-		return nil, errors.Wrap(err, `cannot fetch latest offset`)
+		return nil, errors.Wrap(err, `cannot fetch oldest offset`)
 	}
 
 	latest, err := c.GetOffsetLatest(topic, ptt)
@@ -174,7 +180,7 @@ func (c *partitionConsumer) OffsetValid(topic string, partition int32, offset in
 
 func (c *partitionConsumer) GetOffsetLatest(topic string, partition int32) (offset int64, err error) {
 	// TODO use QueryWatermarkOffsets to get offsets
-	partitionStart, err := c.consumer.OffsetsForTimes(librdKafka.TopicPartitions{
+	partitionEnd, err := c.consumer.OffsetsForTimes(librdKafka.TopicPartitions{
 		librdKafka.TopicPartition{
 			Topic:     &topic,
 			Partition: partition,
@@ -182,10 +188,15 @@ func (c *partitionConsumer) GetOffsetLatest(topic string, partition int32) (offs
 		},
 	}, 60000) // TODO make this configurable
 	if err != nil {
-		return offset, fmt.Errorf(`cannot get latest offset for %s-%d due to %w`, topic, partition, err)
+		return offset, fmt.Errorf(`cannot get latest offset for %s#%d due to %w`, topic, partition, err)
 	}
 
-	return int64(partitionStart[0].Offset), nil
+	if partitionEnd[0].Error != nil {
+		return offset, errors.Wrapf(partitionEnd[0].Error,
+			`cannot get latest offset for %s#%d due to partition error`, topic, partition)
+	}
+
+	return int64(partitionEnd[0].Offset), nil
 }
 
 func (c *partitionConsumer) GetOffsetOldest(topic string, partition int32) (offset int64, err error) {
@@ -198,7 +209,12 @@ func (c *partitionConsumer) GetOffsetOldest(topic string, partition int32) (offs
 		},
 	}, 60000)
 	if err != nil {
-		return offset, fmt.Errorf(`cannot get latest offset for %s#%d due to %w`, topic, partition, err)
+		return offset, fmt.Errorf(`cannot get oldest offset for %s#%d due to %w`, topic, partition, err)
+	}
+
+	if partitionStart[0].Error != nil {
+		return offset, errors.Wrapf(partitionStart[0].Error,
+			`cannot get oldest offset for %s#%d due to partition error`, topic, partition)
 	}
 
 	return int64(partitionStart[0].Offset), nil
@@ -286,15 +302,15 @@ MAIN:
 }
 
 func (c *partitionConsumer) validate(topic string, partition int32, offset int64) (isValid bool, err error) {
-	startOffset, err := c.GetOffsetLatest(topic, partition)
+	latestOffset, err := c.GetOffsetLatest(topic, partition)
 	if err != nil {
 		return false, fmt.Errorf(`offset validate failed for %s-%d due to %w`, topic, partition, err)
 	}
 
-	endOffset, err := c.GetOffsetOldest(topic, partition)
+	oldestOffset, err := c.GetOffsetOldest(topic, partition)
 	if err != nil {
 		return false, fmt.Errorf(`offset validate failed for %s-%d due to %w`, topic, partition, err)
 	}
 
-	return offset >= startOffset && offset < endOffset, nil
+	return offset >= oldestOffset && offset <= latestOffset, nil
 }

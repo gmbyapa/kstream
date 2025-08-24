@@ -35,10 +35,13 @@ func (g *groupSession) TopicMeta() (kafka.TopicMeta, error) {
 
 	for _, tp := range mta.Topics {
 		if tp.Error.Code() != librdKafka.ErrNoError {
-			return nil, errors.Wrap(tp.Error, `topicMeta fetch failed`)
+			return nil, errors.Wrapf(tp.Error, `topicMeta fetch failed for topic [%s]`, tp.Topic)
 		}
 
 		for _, pt := range tp.Partitions {
+			if pt.Error.Code() != librdKafka.ErrNoError {
+				return nil, errors.Wrapf(tp.Error, `topicMeta fetch failed. partition error [%s][%d]`, tp.Topic, pt.ID)
+			}
 			meta = append(meta, kafka.TopicPartition{
 				Topic:     tp.Topic,
 				Partition: pt.ID,
@@ -55,7 +58,7 @@ func (g *groupSession) MarkOffset(_ context.Context, record kafka.Record, meta s
 		{Topic: &tp, Partition: record.Partition(), Offset: librdKafka.Offset(record.Offset() + 1), Metadata: &meta},
 	})
 
-	return err
+	return errors.Wrapf(err, `failed to mark offset for %s[%d]@%d`, tp, record.Partition(), record.Offset())
 }
 
 func (g *groupSession) CommitOffset(_ context.Context, record kafka.Record, meta string) error {
@@ -64,5 +67,5 @@ func (g *groupSession) CommitOffset(_ context.Context, record kafka.Record, meta
 		{Topic: &tp, Partition: record.Partition(), Offset: librdKafka.Offset(record.Offset() + 1), Metadata: &meta},
 	})
 
-	return err
+	return errors.Wrapf(err, `failed to commit offset for %s[%d]@%d`, tp, record.Partition(), record.Offset())
 }
