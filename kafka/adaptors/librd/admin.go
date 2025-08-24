@@ -147,7 +147,7 @@ func (a *kAdmin) fetchInfo(topics []string) (map[string]*kafka.Topic, error) {
 		}
 
 		if meta.Error.Code() != librdKafka.ErrNoError {
-			return nil, err
+			return nil, errors.Wrapf(meta.Error, `cannot get metadata for topic [%s]`, meta.Topic)
 		}
 
 		var partitions []kafka.PartitionConf

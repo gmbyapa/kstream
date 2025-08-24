@@ -363,6 +363,10 @@ func (p *librdProducer) getPartitionCount(topic string) (int32, error) {
 		return 0, errors.Wrapf(err, `metadata fetch failed for %s`, topic)
 	}
 
+	if meta.Topics[topic].Error.Code() != librdKafka.ErrNoError {
+		return 0, errors.Wrapf(meta.Topics[topic].Error, `metadata fetch failed for %s due to a topic error`, topic)
+	}
+
 	count := int32(len(meta.Topics[topic].Partitions))
 	p.partitionCounts.Store(topic, count)
 
