@@ -10,12 +10,13 @@ package librd
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
 	librdKafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/kafka"
 	"github.com/gmbyapa/kstream/v2/pkg/errors"
 	"github.com/tryfix/log"
-	"strings"
-	"time"
 )
 
 type adminOptions struct {
@@ -81,6 +82,10 @@ func (a *kAdmin) FetchInfo(topics []string) (map[string]*kafka.Topic, error) {
 	topicInfo, err := a.fetchInfo(topics)
 	if err != nil {
 		return nil, err
+	}
+
+	if len(topicInfo) == 0 {
+		return topicInfo, nil
 	}
 
 	for _, meta := range topicInfo {
