@@ -83,6 +83,22 @@ func (a *kAdmin) FetchInfo(topics []string) (map[string]*kafka.Topic, error) {
 		return nil, err
 	}
 
+	// fetchInfo silently drops topics that the broker does not know
+	// about. If none of the requested topics resolved, the resources
+	// slice below stays empty and librd's DescribeConfigs panics with
+	// an out-of-range index when the empty slice is passed in (#19).
+	// Surface the missing topics to the caller as an error rather than
+	// crashing on the next line.
+	if len(topicInfo) != len(topics) {
+		var missing []string
+		for _, t := range topics {
+			if _, ok := topicInfo[t]; !ok {
+				missing = append(missing, t)
+			}
+		}
+		return nil, errors.Errorf(`no metadata returned for topic(s) %v (do they exist?)`, missing)
+	}
+
 	for _, meta := range topicInfo {
 		resources = append(resources, librdKafka.ConfigResource{
 			Type: librdKafka.ResourceTopic,
